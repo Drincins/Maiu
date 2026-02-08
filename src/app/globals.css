@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'HeliosExtC';
+  src:
+    local('HeliosExtC'),
+    local('Helios Ext C'),
+    local('HeliosExtC-Regular'),
+    url('/fonts/HeliosExtC-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HeliosExtC';
+  src:
+    local('HeliosExtC Bold'),
+    local('Helios Ext C Bold'),
+    local('HeliosExtC-Bold'),
+    url('/fonts/HeliosExtC-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --font-brand: 'HeliosExtC';
+  --brand-600: #8b1522;
+  --brand-500: #a03340;
+  --ink: #1b1b1b;
+  --fog: #ebebeb;
+  --paper: #ffffff;
+  --ring-color: rgba(139, 21, 34, 0.3);
+}
+
+body {
+  font-family: var(--font-brand), var(--font-body);
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(1200px circle at 8% 0%, rgba(139, 21, 34, 0.08), transparent 55%),
+    radial-gradient(900px circle at 95% 12%, rgba(27, 27, 27, 0.06), transparent 60%),
+    linear-gradient(180deg, #ffffff 0%, #f7f7f7 100%);
+  background-attachment: fixed;
+}
+
+* {
+  @apply border-slate-200;
+}
+
+input, select, textarea {
+  @apply bg-white/80 text-slate-900 placeholder:text-slate-500;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-brand), var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+::selection {
+  background: rgba(139, 21, 34, 0.2);
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring-color);
+}

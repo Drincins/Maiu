@@ -27,7 +27,6 @@ type OperationRow = {
   discount_value_snapshot?: number | null
   city?: string | null
   operation_lines?: OperationLine[]
-  counterparty?: { name: string | null } | null
 }
 
 type FinanceRow = {
@@ -72,7 +71,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       supabase
         .from('operations')
         .select(
-          'id, occurred_at, type, delivery_cost, counterparty:counterparty_id(name), operation_lines(qty, unit_cost_snapshot)'
+          'id, occurred_at, type, delivery_cost, operation_lines(qty, unit_cost_snapshot)'
         )
         .in('type', ['ship_blogger', 'return_blogger'])
     ),
@@ -153,7 +152,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       id: op.id,
       occurred_at: op.occurred_at,
       type: op.type ?? 'ship_blogger',
-      counterparty: op.counterparty?.name ?? '—',
       qty,
       cost,
       delivery_cost: op.delivery_cost ?? 0
@@ -507,7 +505,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <TR>
                     <TH>Дата</TH>
                     <TH>Тип</TH>
-                    <TH>Блогер</TH>
                     <TH>Ед.</TH>
                     <TH>Себестоимость</TH>
                     <TH>Доставка</TH>
@@ -519,7 +516,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <TR key={row.id}>
                         <TD>{formatDate(row.occurred_at)}</TD>
                         <TD>{row.type === 'ship_blogger' ? 'Отправка' : 'Возврат'}</TD>
-                        <TD>{row.counterparty}</TD>
                         <TD>{row.qty}</TD>
                         <TD>{formatMoney(row.cost)}</TD>
                         <TD>{formatMoney(row.delivery_cost)}</TD>
@@ -527,7 +523,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ))
                   ) : (
                     <TR>
-                      <TD colSpan={6}>Нет данных</TD>
+                      <TD colSpan={5}>Нет данных</TD>
                     </TR>
                   )}
                 </TBody>

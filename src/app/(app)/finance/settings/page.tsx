@@ -9,8 +9,7 @@ export default async function FinanceSettingsPage() {
     { data: paymentSources },
     { data: categories },
     { data: promoCodes },
-    { data: locations },
-    { data: counterparties }
+    { data: locations }
   ] = await Promise.all([
     supabase.from('payment_sources').select('id, name').order('created_at'),
     supabase.from('expense_categories').select('id, name, kind').order('created_at'),
@@ -18,8 +17,7 @@ export default async function FinanceSettingsPage() {
       .from('promo_codes')
       .select('id, code, discount_type, discount_value, is_active')
       .order('created_at'),
-    supabase.from('locations').select('id, name, type, is_active').order('created_at'),
-    supabase.from('counterparties').select('id, name, type').order('created_at')
+    supabase.from('locations').select('id, name, type, is_active').order('created_at')
   ])
 
   return (
@@ -33,7 +31,6 @@ export default async function FinanceSettingsPage() {
         categories={categories ?? []}
         promoCodes={promoCodes ?? []}
         locations={locations ?? []}
-        counterparties={counterparties ?? []}
       />
     </div>
   )

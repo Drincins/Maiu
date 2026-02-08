@@ -35,7 +35,6 @@ const schema = z.object({
   occurred_at: z.string().min(1),
   from_location_id: z.string().optional().nullable(),
   to_location_id: z.string().optional().nullable(),
-  counterparty_id: z.string().optional().nullable(),
   promo_code_id: z.string().optional().nullable(),
   sale_channel: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -44,15 +43,6 @@ const schema = z.object({
   tracking_number: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
   lines: z.array(lineSchema).min(1, 'Добавьте хотя бы один товар')
-}).superRefine((values, ctx) => {
-  const hasCounterparty = Boolean(values.counterparty_id && values.counterparty_id.trim().length > 0)
-  if (values.type === 'ship_blogger' && !hasCounterparty) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['counterparty_id'],
-      message: 'Выберите блогера'
-    })
-  }
 })
 
 export type OperationFormValues = z.infer<typeof schema>
@@ -78,16 +68,10 @@ type PromoCode = {
   code: string
 }
 
-type Counterparty = {
-  id: string
-  name: string
-}
-
 type OperationFormProps = {
   variants: Variant[]
   locations: Location[]
   promoCodes: PromoCode[]
-  counterparties: Counterparty[]
   operationId?: string
   initialValues?: OperationFormValues
   submitLabel?: string
@@ -145,7 +129,6 @@ export default function OperationForm({
   variants,
   locations,
   promoCodes,
-  counterparties,
   operationId,
   initialValues,
   submitLabel
@@ -197,7 +180,6 @@ export default function OperationForm({
       initialValues ?? ({
         type: 'sale',
         occurred_at: '',
-        counterparty_id: '',
         lines: []
       } as OperationFormValues)
   })
@@ -221,9 +203,6 @@ export default function OperationForm({
   const selectedType = form.watch('type')
   const draftVariant = variants.find((item) => item.id === lineDraft.variant_id)
   const lineFormError = form.formState.errors.lines?.message as string | undefined
-  const counterpartyFormError = form.formState.errors.counterparty_id?.message as
-    | string
-    | undefined
 
   useEffect(() => {
     if (selectedType === 'sale') {
@@ -236,6 +215,10 @@ export default function OperationForm({
         form.getValues('from_location_id') ||
           locationIdByType('promo') ||
           locationIdByType('sales')
+      )
+      form.setValue(
+        'to_location_id',
+        form.getValues('to_location_id') || locationIdByType('blogger')
       )
     }
     if (selectedType === 'return_blogger') {
@@ -257,9 +240,6 @@ export default function OperationForm({
       form.setValue('from_location_id', form.getValues('from_location_id') || locationIdByType('sold'))
       form.setValue('to_location_id', form.getValues('to_location_id') || locationIdByType('sales'))
     }
-    if (selectedType !== 'ship_blogger' && selectedType !== 'return_blogger') {
-      form.setValue('counterparty_id', '')
-    }
   }, [selectedType, locations])
 
   const handleSubmit = (values: OperationFormValues) => {
@@ -268,14 +248,11 @@ export default function OperationForm({
     const normalize = (value?: string | null) =>
       value && value.length > 0 ? value : null
 
-    const normalizedToLocationId = normalize(values.to_location_id)
     const payload = {
       ...values,
       occurred_at: new Date(values.occurred_at).toISOString(),
       from_location_id: normalize(values.from_location_id),
-      // For blogger shipment the destination location is derived from counterparty on the server.
-      to_location_id: values.type === 'ship_blogger' ? null : normalizedToLocationId,
-      counterparty_id: normalize(values.counterparty_id),
+      to_location_id: normalize(values.to_location_id),
       promo_code_id: normalize(values.promo_code_id),
       sale_channel: normalize(values.sale_channel),
       city: normalize(values.city),
@@ -361,7 +338,6 @@ export default function OperationForm({
       occurred_at: new Date().toISOString(),
       from_location_id: toLocation,
       to_location_id: fromLocation,
-      counterparty_id: normalizeValue(values.counterparty_id),
       promo_code_id: normalizeValue(values.promo_code_id),
       sale_channel: normalizeValue(values.sale_channel),
       city: normalizeValue(values.city),
@@ -446,7 +422,6 @@ export default function OperationForm({
       occurred_at: new Date().toISOString(),
       from_location_id: toLocation,
       to_location_id: fromLocation,
-      counterparty_id: normalizeValue(values.counterparty_id),
       promo_code_id: normalizeValue(values.promo_code_id),
       sale_channel: normalizeValue(values.sale_channel),
       city: normalizeValue(values.city),
@@ -555,17 +530,9 @@ export default function OperationForm({
               ) : null}
             </select>
           </Field>
-          <Field
-            label="Куда"
-            hint={
-              selectedType === 'ship_blogger'
-                ? 'Для отправки блогеру определяется автоматически'
-                : undefined
-            }
-          >
+          <Field label="Куда">
             <select
               className="rounded-xl border border-slate-200 px-3 py-2"
-              disabled={selectedType === 'ship_blogger'}
               {...form.register('to_location_id')}
             >
               <option value="">—</option>
@@ -589,21 +556,6 @@ export default function OperationForm({
               ) : null}
             </select>
           </Field>
-          {selectedType === 'ship_blogger' || selectedType === 'return_blogger' ? (
-            <Field label="Блогер" error={counterpartyFormError}>
-              <select
-                className="rounded-xl border border-slate-200 px-3 py-2"
-                {...form.register('counterparty_id')}
-              >
-                <option value="">—</option>
-                {counterparties.map((counterparty) => (
-                  <option key={counterparty.id} value={counterparty.id}>
-                    {counterparty.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          ) : null}
           <Field label="Промокод">
             <select
               className="rounded-xl border border-slate-200 px-3 py-2"
@@ -658,7 +610,14 @@ export default function OperationForm({
               {...form.register('tracking_number')}
             />
           </Field>
-          <Field label="Комментарий">
+          <Field
+            label="Комментарий"
+            hint={
+              selectedType === 'ship_blogger' || selectedType === 'return_blogger'
+                ? 'При необходимости укажите ссылку на блогера'
+                : undefined
+            }
+          >
             <input
               className="rounded-xl border border-slate-200 px-3 py-2"
               {...form.register('note')}

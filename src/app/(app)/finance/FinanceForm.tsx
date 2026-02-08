@@ -11,10 +11,20 @@ import StorageUploader from '@/components/StorageUploader'
 import { moneyToInt } from '@/lib/money'
 import { createFinanceTransaction } from './actions'
 
+const isMoneyInput = (value: string) => {
+  const normalized = value.replace(',', '.').replace(/\s/g, '')
+  if (!normalized) return false
+  const parsed = Number.parseFloat(normalized)
+  return Number.isFinite(parsed)
+}
+
 const schema = z.object({
   occurred_at: z.string().min(1),
   type: z.enum(['income', 'expense']),
-  amount: z.string().min(1),
+  amount: z
+    .string()
+    .min(1, 'Введите сумму')
+    .refine(isMoneyInput, 'Введите корректную сумму'),
   payment_source_id: z.string().optional().nullable(),
   category_id: z.string().optional().nullable(),
   counterparty_name: z.string().optional().nullable(),
@@ -130,6 +140,11 @@ export default function FinanceForm({
               className="rounded-xl border border-slate-200 px-3 py-2"
               {...form.register('amount')}
             />
+            {form.formState.errors.amount?.message ? (
+              <span className="text-xs text-rose-600">
+                {form.formState.errors.amount.message}
+              </span>
+            ) : null}
           </Field>
           <Field label="Источник оплаты">
             <select

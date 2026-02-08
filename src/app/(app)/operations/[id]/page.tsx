@@ -16,7 +16,6 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
     { data: variants },
     { data: locations },
     { data: promoCodes },
-    { data: counterparties },
     { data: operation, error: operationError },
     { data: lines, error: linesError },
     { data: markCodes, error: markCodesError }
@@ -28,14 +27,9 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
     supabase.from('locations').select('id, name, type').order('created_at'),
     supabase.from('promo_codes').select('id, code').order('created_at'),
     supabase
-      .from('counterparties')
-      .select('id, name')
-      .eq('type', 'blogger')
-      .order('created_at'),
-    supabase
       .from('operations')
       .select(
-        'id, type, occurred_at, from_location_id, to_location_id, counterparty_id, promo_code_id, sale_channel, city, delivery_cost, delivery_service, tracking_number, note'
+        'id, type, occurred_at, from_location_id, to_location_id, promo_code_id, sale_channel, city, delivery_cost, delivery_service, tracking_number, note'
       )
       .eq('id', operationId)
       .single(),
@@ -83,7 +77,6 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
       : new Date().toISOString().slice(0, 16),
     from_location_id: operation.from_location_id ?? '',
     to_location_id: operation.to_location_id ?? '',
-    counterparty_id: operation.counterparty_id ?? '',
     promo_code_id: operation.promo_code_id ?? '',
     sale_channel: operation.sale_channel ?? '',
     city: operation.city ?? '',
@@ -127,7 +120,6 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
         variants={variants ?? []}
         locations={locations ?? []}
         promoCodes={promoCodes ?? []}
-        counterparties={counterparties ?? []}
         operationId={operationId}
         initialValues={initialValues}
         submitLabel="Сохранить изменения"

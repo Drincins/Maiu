@@ -38,7 +38,6 @@ declare
   v_has_duplicates boolean;
   v_adj_delta integer;
   v_loc_for_adjustment uuid;
-  v_blog_name text;
   v_code text;
 begin
   v_user := auth.uid();
@@ -66,22 +65,29 @@ begin
     where id = v_promo and user_id = v_user;
   end if;
 
-  if v_type = 'ship_blogger' then
-    if v_counterparty is null then
-      raise exception 'counterparty_id is required for ship_blogger';
-    end if;
-    if v_to_location is null then
-      select id into v_to_location
-      from public.locations
-      where user_id = v_user and type = 'blogger' and counterparty_id = v_counterparty
-      limit 1;
+  if v_type = 'ship_blogger' and v_to_location is null then
+    select id into v_to_location
+    from public.locations
+    where user_id = v_user and type = 'blogger'
+    limit 1;
 
-      if v_to_location is null then
-        select name into v_blog_name from public.counterparties where id = v_counterparty;
-        insert into public.locations (user_id, name, type, counterparty_id)
-        values (v_user, 'Блогер: ' || coalesce(v_blog_name, 'Без имени'), 'blogger', v_counterparty)
-        returning id into v_to_location;
-      end if;
+    if v_to_location is null then
+      insert into public.locations (user_id, name, type)
+      values (v_user, 'Блогер', 'blogger')
+      returning id into v_to_location;
+    end if;
+  end if;
+
+  if v_type = 'return_blogger' and v_from_location is null then
+    select id into v_from_location
+    from public.locations
+    where user_id = v_user and type = 'blogger'
+    limit 1;
+
+    if v_from_location is null then
+      insert into public.locations (user_id, name, type)
+      values (v_user, 'Блогер', 'blogger')
+      returning id into v_from_location;
     end if;
   end if;
 
@@ -331,7 +337,6 @@ declare
   v_has_duplicates boolean;
   v_adj_delta integer;
   v_loc_for_adjustment uuid;
-  v_blog_name text;
   v_code text;
 begin
   v_user := auth.uid();
@@ -365,22 +370,29 @@ begin
     where id = v_promo and user_id = v_user;
   end if;
 
-  if v_type = 'ship_blogger' then
-    if v_counterparty is null then
-      raise exception 'counterparty_id is required for ship_blogger';
-    end if;
-    if v_to_location is null then
-      select id into v_to_location
-      from public.locations
-      where user_id = v_user and type = 'blogger' and counterparty_id = v_counterparty
-      limit 1;
+  if v_type = 'ship_blogger' and v_to_location is null then
+    select id into v_to_location
+    from public.locations
+    where user_id = v_user and type = 'blogger'
+    limit 1;
 
-      if v_to_location is null then
-        select name into v_blog_name from public.counterparties where id = v_counterparty;
-        insert into public.locations (user_id, name, type, counterparty_id)
-        values (v_user, 'Блогер: ' || coalesce(v_blog_name, 'Без имени'), 'blogger', v_counterparty)
-        returning id into v_to_location;
-      end if;
+    if v_to_location is null then
+      insert into public.locations (user_id, name, type)
+      values (v_user, 'Блогер', 'blogger')
+      returning id into v_to_location;
+    end if;
+  end if;
+
+  if v_type = 'return_blogger' and v_from_location is null then
+    select id into v_from_location
+    from public.locations
+    where user_id = v_user and type = 'blogger'
+    limit 1;
+
+    if v_from_location is null then
+      insert into public.locations (user_id, name, type)
+      values (v_user, 'Блогер', 'blogger')
+      returning id into v_from_location;
     end if;
   end if;
 

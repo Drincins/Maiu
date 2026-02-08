@@ -12,12 +12,10 @@ import {
   createPaymentSource,
   createPromoCode,
   createLocation,
-  createCounterparty,
   deletePaymentSource,
   deleteExpenseCategory,
   deletePromoCode,
-  deleteLocation,
-  deleteCounterparty
+  deleteLocation
 } from '../actions'
 
 const paymentSchema = z.object({
@@ -44,11 +42,6 @@ const salesSchema = z.object({
   name: z.enum(['Клиент', 'Блогер', 'Брак/Списание'])
 })
 
-const counterpartySchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(['blogger', 'customer', 'supplier', 'other'])
-})
-
 type FinanceSettingsClientProps = {
   paymentSources: { id: string; name: string }[]
   categories: { id: string; name: string; kind: string }[]
@@ -60,15 +53,13 @@ type FinanceSettingsClientProps = {
     is_active: boolean
   }[]
   locations: { id: string; name: string; type: string; is_active?: boolean }[]
-  counterparties: { id: string; name: string; type: string }[]
 }
 
 export default function FinanceSettingsClient({
   paymentSources,
   categories,
   promoCodes,
-  locations,
-  counterparties
+  locations
 }: FinanceSettingsClientProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -85,11 +76,6 @@ export default function FinanceSettingsClient({
   const promoForm = useForm<z.infer<typeof promoSchema>>({
     resolver: zodResolver(promoSchema),
     defaultValues: { discount_type: 'percent', discount_value: 0, is_active: true }
-  })
-
-  const counterpartyForm = useForm<z.infer<typeof counterpartySchema>>({
-    resolver: zodResolver(counterpartySchema),
-    defaultValues: { type: 'blogger' }
   })
 
   const runAction = (action: () => Promise<{ error?: string }>) => {
@@ -130,10 +116,6 @@ export default function FinanceSettingsClient({
     runAction(() => createLocation({ name: values.name, type }))
   }
 
-  const submitCounterparty = (values: z.infer<typeof counterpartySchema>) => {
-    runAction(() => createCounterparty(values))
-  }
-
   const promoLabel = (promo: FinanceSettingsClientProps['promoCodes'][number]) => {
     const value =
       promo.discount_type === 'percent'
@@ -149,16 +131,6 @@ export default function FinanceSettingsClient({
       scrap: 'Брак/Списание'
     }
     return map[type] ?? 'Клиент'
-  }
-
-  const counterpartyTypeLabel = (type: string) => {
-    const map: Record<string, string> = {
-      blogger: 'Блогер',
-      customer: 'Клиент',
-      supplier: 'Поставщик',
-      other: 'Другое'
-    }
-    return map[type] ?? type
   }
 
   const storageLocations = locations.filter((item) =>
@@ -231,48 +203,6 @@ export default function FinanceSettingsClient({
             <input className="rounded-xl border border-slate-200 px-3 py-2" {...paymentForm.register('name')} />
           </Field>
           <Button type="submit" disabled={isPending}>Добавить</Button>
-        </form>
-      </Card>
-
-      <Card>
-        <h2 className="text-lg font-semibold text-slate-900">Контрагенты</h2>
-        <ul className="mt-3 space-y-1 text-sm text-slate-600">
-          {counterparties.map((item) => (
-            <li key={item.id} className="flex items-center justify-between gap-2">
-              <div className="flex flex-col">
-                <span>{item.name}</span>
-                <span className="text-xs text-slate-400">
-                  {counterpartyTypeLabel(item.type)}
-                </span>
-              </div>
-              <IconButton onClick={() => runAction(() => deleteCounterparty(item.id))} />
-            </li>
-          ))}
-        </ul>
-        <form
-          onSubmit={counterpartyForm.handleSubmit(submitCounterparty)}
-          className="mt-4 grid gap-3"
-        >
-          <Field label="Имя">
-            <input
-              className="rounded-xl border border-slate-200 px-3 py-2"
-              {...counterpartyForm.register('name')}
-            />
-          </Field>
-          <Field label="Тип">
-            <select
-              className="rounded-xl border border-slate-200 px-3 py-2"
-              {...counterpartyForm.register('type')}
-            >
-              <option value="blogger">Блогер</option>
-              <option value="customer">Клиент</option>
-              <option value="supplier">Поставщик</option>
-              <option value="other">Другое</option>
-            </select>
-          </Field>
-          <Button type="submit" disabled={isPending}>
-            Добавить
-          </Button>
         </form>
       </Card>
 

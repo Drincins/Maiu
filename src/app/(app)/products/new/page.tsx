@@ -14,10 +14,23 @@ import { moneyToInt } from '@/lib/money'
 
 const sizeOptions = ['XS', 'S', 'M'] as const
 
+const isMoneyInput = (value: string) => {
+  const normalized = value.replace(',', '.').replace(/\s/g, '')
+  if (!normalized) return false
+  const parsed = Number.parseFloat(normalized)
+  return Number.isFinite(parsed)
+}
+
 const schema = z.object({
   name: z.string().min(1, 'Введите название'),
-  unit_price: z.string().min(1, 'Введите стоимость'),
-  unit_cost: z.string().min(1, 'Введите себестоимость'),
+  unit_price: z
+    .string()
+    .min(1, 'Введите стоимость')
+    .refine(isMoneyInput, 'Введите корректную стоимость'),
+  unit_cost: z
+    .string()
+    .min(1, 'Введите себестоимость')
+    .refine(isMoneyInput, 'Введите корректную себестоимость'),
   color: z.string().min(1, 'Введите цвет'),
   sizes: z.array(z.enum(sizeOptions)).min(1, 'Выберите размеры'),
   main_image_url: z.string().optional()

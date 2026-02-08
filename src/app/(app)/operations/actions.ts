@@ -43,7 +43,7 @@ export async function updateOperation(operationId: string, payload: Record<strin
 
   try {
     const { data, error } = await supabase.rpc('update_operation', {
-      operation_id: operationId,
+      p_operation_id: operationId,
       payload: normalized
     })
 
@@ -83,4 +83,3 @@ export async function deleteOperation(operationId: string) {
     return { error: error instanceof Error ? error.message : 'Unexpected error' }
   }
 }
-

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -222,10 +223,17 @@ export default function ProductDetailClient({
       <Card>
         <form onSubmit={modelForm.handleSubmit(submitModel)} className="grid gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">Карточка модели</h2>
-            <Badge tone={model.is_active ? 'success' : 'warning'}>
-              {model.is_active ? 'Активно' : 'Архив'}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Карточка модели</h2>
+              <Badge tone={model.is_active ? 'success' : 'warning'}>
+                {model.is_active ? 'Активно' : 'Архив'}
+              </Badge>
+            </div>
+            <Link href={`/products/${model.id}/tech-card`}>
+              <Button type="button" variant="secondary">
+                Техкарта
+              </Button>
+            </Link>
           </div>
           <Field label="Название" error={modelForm.formState.errors.name?.message}>
             <input

@@ -69,6 +69,20 @@ create table if not exists public.product_variants (
   unique (user_id, sku)
 );
 
+create table if not exists public.product_tech_cards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  model_id uuid not null references public.product_models(id) on delete cascade,
+  sketch_url text,
+  name text,
+  color text,
+  sizes text[],
+  lines jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (model_id)
+);
+
 create table if not exists public.counterparties (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -218,6 +232,10 @@ drop trigger if exists trg_product_variants_updated_at on public.product_variant
 create trigger trg_product_variants_updated_at before update on public.product_variants
 for each row execute procedure set_updated_at();
 
+drop trigger if exists trg_product_tech_cards_updated_at on public.product_tech_cards;
+create trigger trg_product_tech_cards_updated_at before update on public.product_tech_cards
+for each row execute procedure set_updated_at();
+
 drop trigger if exists trg_mark_codes_updated_at on public.mark_codes;
 create trigger trg_mark_codes_updated_at before update on public.mark_codes
 for each row execute procedure set_updated_at();
@@ -225,6 +243,7 @@ for each row execute procedure set_updated_at();
 -- Indexes
 create index if not exists idx_product_models_user on public.product_models(user_id);
 create index if not exists idx_product_variants_user on public.product_variants(user_id);
+create index if not exists idx_product_tech_cards_user on public.product_tech_cards(user_id);
 create index if not exists idx_locations_user on public.locations(user_id);
 create index if not exists idx_operations_user_occurred on public.operations(user_id, occurred_at desc);
 create index if not exists idx_stock_movements_user_occurred on public.stock_movements(user_id, occurred_at desc);
@@ -233,6 +252,7 @@ create index if not exists idx_mark_codes_user on public.mark_codes(user_id);
 -- RLS enable
 alter table public.product_models enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.product_tech_cards enable row level security;
 alter table public.counterparties enable row level security;
 alter table public.locations enable row level security;
 alter table public.promo_codes enable row level security;
@@ -252,7 +272,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'product_models','product_variants','counterparties','locations','promo_codes',
+    'product_models','product_variants','product_tech_cards','counterparties','locations','promo_codes',
     'operations','stock_movements','mark_codes','legal_entities','payment_sources',
     'expense_categories','finance_transactions'
   ]

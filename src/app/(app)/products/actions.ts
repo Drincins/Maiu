@@ -293,3 +293,91 @@ export async function createVariant(
   return { id: data.id }
 }
 
+export async function upsertTechCard(
+  modelId: string,
+  values: {
+    sketch_url?: string | null
+    name?: string | null
+    color?: string | null
+    sizes?: string[] | null
+    lines?: Array<{
+      name?: string | null
+      article?: string | null
+      composition?: string | null
+      purchase_place?: string | null
+      usage?: number | null
+      unit_price?: number | null
+    }> | null
+  }
+) {
+  const supabase = await createClient()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Not authenticated' }
+  }
+
+  // Prevent cross-user references by validating ownership under RLS.
+  const { data: model } = await supabase
+    .from('product_models')
+    .select('id')
+    .eq('id', modelId)
+    .maybeSingle()
+
+  if (!model) {
+    return { error: 'Model not found' }
+  }
+
+  const normalizeText = (value?: string | null) => {
+    const trimmed = (value ?? '').trim()
+    return trimmed.length ? trimmed : null
+  }
+
+  const payload = {
+    user_id: user.id,
+    model_id: modelId,
+    sketch_url: normalizeText(values.sketch_url),
+    name: normalizeText(values.name),
+    color: normalizeText(values.color),
+    sizes: values.sizes ?? null,
+    lines: values.lines ?? []
+  }
+
+  const { data, error } = await supabase
+    .from('product_tech_cards')
+    .upsert(payload, { onConflict: 'model_id' })
+    .select('id')
+    .single()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { id: data.id }
+}
+
+export async function deleteTechCard(modelId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Not authenticated' }
+  }
+
+  const { error } = await supabase
+    .from('product_tech_cards')
+    .delete()
+    .eq('model_id', modelId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { ok: true }
+}
+

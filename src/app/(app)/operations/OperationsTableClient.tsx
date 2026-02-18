@@ -15,6 +15,7 @@ type OperationRow = {
   note: string | null
   from_location_id: string | null
   to_location_id: string | null
+  promo_code_id: string | null
 }
 
 type LocationRow = {
@@ -38,6 +39,13 @@ type SortKey =
   | 'city_asc'
   | 'city_desc'
 
+type QuickFilter =
+  | 'all'
+  | 'with_promo'
+  | 'without_promo'
+  | 'with_delivery'
+  | 'without_delivery'
+
 const typeLabels: Record<string, string> = {
   inbound: 'Приход',
   transfer: 'Перемещение',
@@ -56,7 +64,7 @@ export default function OperationsTableClient({
 }: OperationsTableClientProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [issueFilter, setIssueFilter] = useState<'all' | 'only'>('all')
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('occurred_desc')
@@ -81,7 +89,13 @@ export default function OperationsTableClient({
 
     const filtered = operations.filter((operation) => {
       if (typeFilter && operation.type !== typeFilter) return false
-      if (issueFilter === 'only' && !issueSet.has(operation.id)) return false
+
+      const hasPromo = Boolean(operation.promo_code_id)
+      const hasDelivery = (operation.delivery_cost ?? 0) > 0
+      if (quickFilter === 'with_promo' && !hasPromo) return false
+      if (quickFilter === 'without_promo' && hasPromo) return false
+      if (quickFilter === 'with_delivery' && !hasDelivery) return false
+      if (quickFilter === 'without_delivery' && hasDelivery) return false
 
       const operationTs = new Date(operation.occurred_at).getTime()
       if (fromTs !== null && operationTs < fromTs) return false
@@ -144,7 +158,7 @@ export default function OperationsTableClient({
     operations,
     searchQuery,
     typeFilter,
-    issueFilter,
+    quickFilter,
     dateFrom,
     dateTo,
     sortBy,
@@ -175,11 +189,14 @@ export default function OperationsTableClient({
         </select>
         <select
           className="rounded-xl border border-slate-200 px-3 py-2"
-          value={issueFilter}
-          onChange={(event) => setIssueFilter(event.target.value as 'all' | 'only')}
+          value={quickFilter}
+          onChange={(event) => setQuickFilter(event.target.value as QuickFilter)}
         >
-          <option value="all">Все операции</option>
-          <option value="only">Только с проблемами маркировки</option>
+          <option value="all">Все</option>
+          <option value="with_promo">С промокодом</option>
+          <option value="without_promo">Без промокода</option>
+          <option value="with_delivery">С доставкой</option>
+          <option value="without_delivery">Без доставки</option>
         </select>
         <input
           type="date"

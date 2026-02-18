@@ -12,7 +12,7 @@ export default async function OperationsPage() {
   const { data: operations, error: operationsError } = await supabase
     .from('operations')
     .select(
-      'id, type, occurred_at, city, delivery_cost, note, from_location_id, to_location_id'
+      'id, type, occurred_at, city, delivery_cost, note, from_location_id, to_location_id, promo_code_id'
     )
     .order('occurred_at', { ascending: false })
     .limit(500)
@@ -100,6 +100,7 @@ export default async function OperationsPage() {
             note: string | null
             from_location_id: string | null
             to_location_id: string | null
+            promo_code_id: string | null
           }>}
           locations={(locations ?? []) as Array<{ id: string; name: string }>}
           issueOperationIds={(issueLines ?? []).map((line) => line.operation_id)}

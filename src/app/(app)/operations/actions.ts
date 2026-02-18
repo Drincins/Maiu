@@ -68,14 +68,20 @@ export async function deleteOperation(operationId: string) {
   }
 
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('operations')
       .delete()
       .eq('id', operationId)
       .eq('user_id', user.id)
+      .select('id')
+      .maybeSingle()
 
     if (error) {
       return { error: error.message }
+    }
+
+    if (!data) {
+      return { error: 'Operation not found' }
     }
 
     return { ok: true }

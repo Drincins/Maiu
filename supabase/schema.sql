@@ -27,6 +27,9 @@ do $$ begin
   if not exists (select 1 from pg_type where typname = 'mark_status') then
     create type mark_status as enum ('in_stock','at_blogger','sold','returned','written_off','unknown');
   end if;
+  if not exists (select 1 from pg_type where typname = 'sales_revenue_source') then
+    create type sales_revenue_source as enum ('operations','finance');
+  end if;
 end $$;
 
 -- Updated_at trigger
@@ -67,6 +70,16 @@ create table if not exists public.product_variants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, sku)
+);
+
+create table if not exists public.product_variant_price_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  variant_id uuid not null references public.product_variants(id) on delete cascade,
+  unit_price integer not null check (unit_price >= 0),
+  effective_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, variant_id, effective_at)
 );
 
 create table if not exists public.product_tech_cards (
@@ -223,6 +236,24 @@ create table if not exists public.finance_transactions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.dashboard_settings (
+  user_id uuid primary key,
+  sales_revenue_source sales_revenue_source not null default 'operations',
+  include_finance_income boolean not null default true,
+  include_finance_expense boolean not null default true,
+  include_sales_revenue boolean not null default true,
+  include_sale_returns boolean not null default true,
+  include_sales_delivery boolean not null default true,
+  include_sales_discounts boolean not null default true,
+  include_sales_cogs boolean not null default true,
+  include_sales_return_cost_recovery boolean not null default true,
+  include_blogger_ship_cost boolean not null default true,
+  include_blogger_delivery boolean not null default true,
+  include_blogger_return_recovery boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Triggers
 drop trigger if exists trg_product_models_updated_at on public.product_models;
 create trigger trg_product_models_updated_at before update on public.product_models
@@ -240,9 +271,15 @@ drop trigger if exists trg_mark_codes_updated_at on public.mark_codes;
 create trigger trg_mark_codes_updated_at before update on public.mark_codes
 for each row execute procedure set_updated_at();
 
+drop trigger if exists trg_dashboard_settings_updated_at on public.dashboard_settings;
+create trigger trg_dashboard_settings_updated_at before update on public.dashboard_settings
+for each row execute procedure set_updated_at();
+
 -- Indexes
 create index if not exists idx_product_models_user on public.product_models(user_id);
 create index if not exists idx_product_variants_user on public.product_variants(user_id);
+create index if not exists idx_price_history_user_variant_effective
+  on public.product_variant_price_history(user_id, variant_id, effective_at desc);
 create index if not exists idx_product_tech_cards_user on public.product_tech_cards(user_id);
 create index if not exists idx_locations_user on public.locations(user_id);
 create index if not exists idx_operations_user_occurred on public.operations(user_id, occurred_at desc);
@@ -252,6 +289,7 @@ create index if not exists idx_mark_codes_user on public.mark_codes(user_id);
 -- RLS enable
 alter table public.product_models enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.product_variant_price_history enable row level security;
 alter table public.product_tech_cards enable row level security;
 alter table public.counterparties enable row level security;
 alter table public.locations enable row level security;
@@ -264,6 +302,7 @@ alter table public.legal_entities enable row level security;
 alter table public.payment_sources enable row level security;
 alter table public.expense_categories enable row level security;
 alter table public.finance_transactions enable row level security;
+alter table public.dashboard_settings enable row level security;
 
 -- RLS policies (owner-only)
 -- For each table: select/insert/update/delete with user_id = auth.uid()
@@ -272,9 +311,9 @@ declare
   t text;
 begin
   foreach t in array array[
-    'product_models','product_variants','product_tech_cards','counterparties','locations','promo_codes',
+    'product_models','product_variants','product_variant_price_history','product_tech_cards','counterparties','locations','promo_codes',
     'operations','stock_movements','mark_codes','legal_entities','payment_sources',
-    'expense_categories','finance_transactions'
+    'expense_categories','finance_transactions','dashboard_settings'
   ]
   loop
     execute format('drop policy if exists "select_own" on public.%I;', t);
@@ -329,30 +368,55 @@ from public.stock_movements sm
 group by sm.user_id, sm.variant_id, sm.location_id;
 
 -- Storage buckets and policies (images/attachments)
-alter table storage.objects enable row level security;
+-- In some environments current role is not owner of storage.objects.
+-- Keep schema bootstrap resilient: skip storage setup if privileges are insufficient.
+do $$
+declare
+  v_storage_objects_owner text;
+begin
+  select pg_catalog.pg_get_userbyid(c.relowner)
+    into v_storage_objects_owner
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'storage'
+    and c.relname = 'objects'
+    and c.relkind = 'r';
 
-insert into storage.buckets (id, name, public)
-values
-  ('product-images', 'product-images', true),
-  ('finance-attachments', 'finance-attachments', true)
-on conflict (id) do nothing;
+  if v_storage_objects_owner is distinct from current_user then
+    raise notice 'Skipping storage setup: current_user (%) is not owner of storage.objects (%)',
+      current_user,
+      coalesce(v_storage_objects_owner, 'unknown');
+    return;
+  end if;
 
-drop policy if exists "product_images_insert" on storage.objects;
-create policy "product_images_insert"
-on storage.objects for insert to authenticated
-with check (bucket_id = 'product-images');
+  alter table storage.objects enable row level security;
 
-drop policy if exists "product_images_select" on storage.objects;
-create policy "product_images_select"
-on storage.objects for select to authenticated
-using (bucket_id = 'product-images');
+  insert into storage.buckets (id, name, public)
+  values
+    ('product-images', 'product-images', true),
+    ('finance-attachments', 'finance-attachments', true)
+  on conflict (id) do nothing;
 
-drop policy if exists "finance_attachments_insert" on storage.objects;
-create policy "finance_attachments_insert"
-on storage.objects for insert to authenticated
-with check (bucket_id = 'finance-attachments');
+  drop policy if exists "product_images_insert" on storage.objects;
+  create policy "product_images_insert"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'product-images');
 
-drop policy if exists "finance_attachments_select" on storage.objects;
-create policy "finance_attachments_select"
-on storage.objects for select to authenticated
-using (bucket_id = 'finance-attachments');
+  drop policy if exists "product_images_select" on storage.objects;
+  create policy "product_images_select"
+  on storage.objects for select to authenticated
+  using (bucket_id = 'product-images');
+
+  drop policy if exists "finance_attachments_insert" on storage.objects;
+  create policy "finance_attachments_insert"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'finance-attachments');
+
+  drop policy if exists "finance_attachments_select" on storage.objects;
+  create policy "finance_attachments_select"
+  on storage.objects for select to authenticated
+  using (bucket_id = 'finance-attachments');
+exception
+  when insufficient_privilege then
+    raise notice 'Skipping storage setup: insufficient privilege for current_user (%)', current_user;
+end $$;

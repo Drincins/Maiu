@@ -38,6 +38,16 @@ type InventoryClientProps = {
   locations: Location[]
 }
 
+type SortKey =
+  | 'sku_asc'
+  | 'sku_desc'
+  | 'model_asc'
+  | 'model_desc'
+  | 'location_asc'
+  | 'location_desc'
+  | 'qty_asc'
+  | 'qty_desc'
+
 export default function InventoryClient({ stock, variants, locations }: InventoryClientProps) {
   const [selectedModelId, setSelectedModelId] = useState('')
   const [selectedLocationId, setSelectedLocationId] = useState('')
@@ -49,6 +59,9 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   const [occurredDate, setOccurredDate] = useState('')
   const [size, setSize] = useState('')
   const [color, setColor] = useState('')
+  const [locationFilter, setLocationFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<SortKey>('qty_desc')
   const [onlyActive, setOnlyActive] = useState(true)
 
   useEffect(() => {
@@ -236,23 +249,78 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
     })
   }
 
-  const rows = stock
-    .map((row) => {
-      const variant = variantMap.get(row.variant_id)
-      const location = locationMap.get(row.location_id)
-      return {
-        ...row,
-        variant,
-        location
+  const rows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    const nextRows = stock
+      .map((row) => {
+        const variant = variantMap.get(row.variant_id)
+        const location = locationMap.get(row.location_id)
+        return {
+          ...row,
+          variant,
+          location
+        }
+      })
+      .filter((row) => row.variant && row.location)
+      .filter((row) => {
+        if (onlyActive && row.variant?.model?.is_active === false) return false
+        if (size && row.variant?.size !== size) return false
+        if (color && row.variant?.color !== color) return false
+        if (locationFilter && row.location_id !== locationFilter) return false
+        if (!query) return true
+
+        const haystack = [
+          row.variant?.sku ?? '',
+          row.variant?.model?.name ?? '',
+          row.variant?.size ?? '',
+          row.variant?.color ?? '',
+          row.location?.name ?? ''
+        ]
+          .join(' ')
+          .toLowerCase()
+
+        return haystack.includes(query)
+      })
+
+    return [...nextRows].sort((a, b) => {
+      const skuA = a.variant?.sku ?? ''
+      const skuB = b.variant?.sku ?? ''
+      const modelA = a.variant?.model?.name ?? ''
+      const modelB = b.variant?.model?.name ?? ''
+      const locationA = a.location?.name ?? ''
+      const locationB = b.location?.name ?? ''
+
+      switch (sortBy) {
+        case 'sku_desc':
+          return skuB.localeCompare(skuA, 'ru')
+        case 'model_asc':
+          return modelA.localeCompare(modelB, 'ru')
+        case 'model_desc':
+          return modelB.localeCompare(modelA, 'ru')
+        case 'location_asc':
+          return locationA.localeCompare(locationB, 'ru')
+        case 'location_desc':
+          return locationB.localeCompare(locationA, 'ru')
+        case 'qty_asc':
+          return a.qty - b.qty
+        case 'qty_desc':
+          return b.qty - a.qty
+        case 'sku_asc':
+        default:
+          return skuA.localeCompare(skuB, 'ru')
       }
     })
-    .filter((row) => row.variant && row.location)
-    .filter((row) => {
-      if (onlyActive && row.variant?.model?.is_active === false) return false
-      if (size && row.variant?.size !== size) return false
-      if (color && row.variant?.color !== color) return false
-      return true
-    })
+  }, [
+    stock,
+    variantMap,
+    locationMap,
+    onlyActive,
+    size,
+    color,
+    locationFilter,
+    searchQuery,
+    sortBy
+  ])
 
   return (
     <div className="flex flex-col gap-6">
@@ -540,6 +608,53 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             ))}
           </select>
         </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+            Локация
+          </span>
+          <select
+            className="w-full rounded-xl border border-slate-200 px-3 py-2"
+            value={locationFilter}
+            onChange={(event) => setLocationFilter(event.target.value)}
+          >
+            <option value="">Все</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+            Поиск
+          </span>
+          <input
+            className="w-full rounded-xl border border-slate-200 px-3 py-2"
+            placeholder="SKU, модель, размер, цвет, локация"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+            Сортировка
+          </span>
+          <select
+            className="w-full rounded-xl border border-slate-200 px-3 py-2"
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as SortKey)}
+          >
+            <option value="qty_desc">Остаток: по убыванию</option>
+            <option value="qty_asc">Остаток: по возрастанию</option>
+            <option value="sku_asc">SKU: А-Я</option>
+            <option value="sku_desc">SKU: Я-А</option>
+            <option value="model_asc">Модель: А-Я</option>
+            <option value="model_desc">Модель: Я-А</option>
+            <option value="location_asc">Локация: А-Я</option>
+            <option value="location_desc">Локация: Я-А</option>
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -563,16 +678,24 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             </TR>
           </THead>
           <TBody>
-            {rows.map((row) => (
-              <TR key={`${row.variant_id}-${row.location_id}`}>
-                <TD className="font-medium text-slate-900">{row.variant?.sku}</TD>
-                <TD>{row.variant?.model?.name ?? '—'}</TD>
-                <TD>{row.variant?.size ?? '—'}</TD>
-                <TD>{row.variant?.color ?? '—'}</TD>
-                <TD>{row.location?.name ?? '—'}</TD>
-                <TD className="font-semibold text-slate-900">{row.qty}</TD>
+            {rows.length ? (
+              rows.map((row) => (
+                <TR key={`${row.variant_id}-${row.location_id}`}>
+                  <TD className="font-medium text-slate-900">{row.variant?.sku}</TD>
+                  <TD>{row.variant?.model?.name ?? '—'}</TD>
+                  <TD>{row.variant?.size ?? '—'}</TD>
+                  <TD>{row.variant?.color ?? '—'}</TD>
+                  <TD>{row.location?.name ?? '—'}</TD>
+                  <TD className="font-semibold text-slate-900">{row.qty}</TD>
+                </TR>
+              ))
+            ) : (
+              <TR>
+                <TD colSpan={6} className="text-center text-slate-500">
+                  Ничего не найдено по выбранным параметрам
+                </TD>
               </TR>
-            ))}
+            )}
           </TBody>
         </Table>
       </Card>

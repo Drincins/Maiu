@@ -5,11 +5,16 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/Table'
 import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/Button'
 import { Field } from '@/components/Field'
+import {
+  DASHBOARD_SETTINGS_DEFAULTS,
+  DASHBOARD_SETTINGS_SELECT,
+  normalizeDashboardSettings
+} from './settings'
 
 type DashboardPageProps = {
   searchParams?:
-    | Promise<{ from?: string; to?: string; report?: string }>
-    | { from?: string; to?: string; report?: string }
+    | Promise<{ from?: string; to?: string; report?: string; scope?: string }>
+    | { from?: string; to?: string; report?: string; scope?: string }
 }
 
 type OperationLine = {
@@ -24,6 +29,7 @@ type OperationRow = {
   type?: string
   delivery_cost?: number | null
   promo_code_snapshot?: string | null
+  discount_type_snapshot?: string | null
   discount_value_snapshot?: number | null
   city?: string | null
   operation_lines?: OperationLine[]
@@ -34,6 +40,7 @@ type FinanceRow = {
   occurred_at: string
   type: 'income' | 'expense'
   amount: number
+  operation_id?: string | null
   category?: { name: string | null } | null
   payment_source?: { name: string | null } | null
 }
@@ -41,8 +48,12 @@ type FinanceRow = {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const supabase = await createClient()
   const resolvedSearchParams = await searchParams
-  const from = resolvedSearchParams?.from
-  const to = resolvedSearchParams?.to
+  const today = new Date().toISOString().slice(0, 10)
+  const scope = resolvedSearchParams?.scope
+  const isAllTime = scope === 'all'
+  const normalizeDateParam = (value?: string) => (value?.trim() ? value : today)
+  const from = isAllTime ? null : normalizeDateParam(resolvedSearchParams?.from)
+  const to = isAllTime ? null : normalizeDateParam(resolvedSearchParams?.to)
   const reportParam = resolvedSearchParams?.report
   const reportType = reportParam === 'sales' || reportParam === 'blogger' || reportParam === 'finance'
     ? reportParam
@@ -58,12 +69,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     return next
   }
 
-  const [{ data: salesOps }, { data: bloggerOps }, { data: finance }] = await Promise.all([
+  const [
+    { data: salesOps },
+    { data: bloggerOps },
+    { data: finance },
+    { data: rawDashboardSettings, error: dashboardSettingsError }
+  ] = await Promise.all([
     applyDateFilter(
       supabase
         .from('operations')
         .select(
-          'id, occurred_at, type, city, delivery_cost, promo_code_snapshot, discount_value_snapshot, operation_lines(qty, unit_price_snapshot, unit_cost_snapshot)'
+          'id, occurred_at, type, city, delivery_cost, promo_code_snapshot, discount_type_snapshot, discount_value_snapshot, operation_lines(qty, unit_price_snapshot, unit_cost_snapshot)'
         )
         .in('type', ['sale', 'sale_return'])
     ),
@@ -78,18 +94,44 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     applyDateFilter(
       supabase
         .from('finance_transactions')
-        .select('id, occurred_at, type, amount, category:category_id(name), payment_source:payment_source_id(name)')
-    )
+        .select(
+          'id, occurred_at, type, amount, operation_id, category:category_id(name), payment_source:payment_source_id(name)'
+        )
+    ),
+    supabase
+      .from('dashboard_settings')
+      .select(DASHBOARD_SETTINGS_SELECT)
+      .maybeSingle()
   ])
+
+  const dashboardSettings = dashboardSettingsError
+    ? DASHBOARD_SETTINGS_DEFAULTS
+    : normalizeDashboardSettings(rawDashboardSettings)
 
   const formatDate = (value?: string | null) =>
     value ? new Date(value).toLocaleDateString('ru-RU') : '—'
 
+  const calculateDiscount = (revenue: number, type?: string | null, value?: number | null) => {
+    const normalizedRevenue = Math.max(0, revenue)
+    const rawValue = Math.max(0, value ?? 0)
+
+    if (!normalizedRevenue || !rawValue) return 0
+
+    if (type === 'percent') {
+      const boundedPercent = Math.min(100, rawValue)
+      return Math.round((normalizedRevenue * boundedPercent) / 100)
+    }
+
+    const fixedDiscountInKopecks = rawValue * 100
+    return Math.min(fixedDiscountInKopecks, normalizedRevenue)
+  }
+
   const salesRows = (salesOps as OperationRow[] | null | undefined)?.map((op) => {
-    const sign = op.type === 'sale_return' ? -1 : 1
+    const isSaleReturn = op.type === 'sale_return'
+    const sign = isSaleReturn ? -1 : 1
     const lines = op.operation_lines ?? []
     const qty = lines.reduce((sum, line) => sum + (line.qty ?? 0), 0)
-    const revenue = lines.reduce(
+    const grossRevenue = lines.reduce(
       (sum, line) => sum + (line.unit_price_snapshot ?? 0) * line.qty,
       0
     )
@@ -97,22 +139,46 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       (sum, line) => sum + (line.unit_cost_snapshot ?? 0) * line.qty,
       0
     )
-    const discount = op.discount_value_snapshot ?? 0
-    const netRevenue = Math.max(0, revenue - discount)
+    const discount = calculateDiscount(
+      grossRevenue,
+      op.discount_type_snapshot,
+      op.discount_value_snapshot
+    )
+    const netRevenue = Math.max(0, grossRevenue - discount)
+    const delivery = op.delivery_cost ?? 0
+
     return {
       id: op.id,
       occurred_at: op.occurred_at,
-      type: op.type ?? 'sale',
+      type: isSaleReturn ? 'sale_return' : 'sale',
       city: op.city ?? null,
+      gross_revenue: grossRevenue,
+      net_revenue: netRevenue,
+      discount_value: discount,
+      cost_value: cost,
+      delivery_value: delivery,
       qty: qty * sign,
       revenue: netRevenue * sign,
       discount: discount * sign,
       cost: cost * sign,
-      delivery_cost: (op.delivery_cost ?? 0) * sign,
-      profit: netRevenue * sign + (op.delivery_cost ?? 0) * sign - cost * sign,
+      delivery_cost: delivery * sign,
+      profit: netRevenue * sign + delivery * sign - cost * sign,
       promo_code: op.promo_code_snapshot ?? null
     }
   }) ?? []
+
+  const saleOnlyRows = salesRows.filter((row) => row.type === 'sale')
+  const salesReturnRows = salesRows.filter((row) => row.type === 'sale_return')
+
+  const salesGrossRevenueOnly = saleOnlyRows.reduce((sum, row) => sum + row.gross_revenue, 0)
+  const salesDiscountOnly = saleOnlyRows.reduce((sum, row) => sum + row.discount_value, 0)
+  const salesReturnsNet = salesReturnRows.reduce((sum, row) => sum + row.net_revenue, 0)
+  const salesCostOnly = saleOnlyRows.reduce((sum, row) => sum + row.cost_value, 0)
+  const salesReturnCostRecovery = salesReturnRows.reduce(
+    (sum, row) => sum + row.cost_value,
+    0
+  )
+  const salesDeliveryExpense = salesRows.reduce((sum, row) => sum + row.delivery_value, 0)
 
   const salesRevenue = salesRows.reduce((sum, row) => sum + row.revenue, 0)
   const salesCost = salesRows.reduce((sum, row) => sum + row.cost, 0)
@@ -135,7 +201,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const deliveryCityRows = Array.from(deliveriesByCity.entries())
     .map(([city, count]) => ({ city, count }))
     .sort((a, b) => b.count - a.count)
-  const salesReturnRows = salesRows.filter((row) => row.type === 'sale_return')
   const salesReturnCount = salesReturnRows.length
   const salesReturnQty = salesReturnRows.reduce((sum, row) => sum + Math.abs(row.qty), 0)
   const salesReturnRevenue = salesReturnRows.reduce((sum, row) => sum + row.revenue, 0)
@@ -168,12 +233,115 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const bloggerReturnCount = bloggerReturnRows.length
   const bloggerReturnQty = bloggerReturnRows.reduce((sum, row) => sum + row.qty, 0)
+  const bloggerReturnCost = bloggerReturnRows.reduce((sum, row) => sum + row.cost, 0)
+  const bloggerReturnDelivery = bloggerReturnRows.reduce(
+    (sum, row) => sum + row.delivery_cost,
+    0
+  )
+  const bloggerDeliveryExpense = shipDelivery + bloggerReturnDelivery
 
   const financeRows = (finance as FinanceRow[] | null | undefined) ?? []
   const incomeRows = financeRows.filter((row) => row.type === 'income')
   const expenseRows = financeRows.filter((row) => row.type === 'expense')
   const incomeTotal = incomeRows.reduce((sum, row) => sum + row.amount, 0)
   const expenseTotal = expenseRows.reduce((sum, row) => sum + row.amount, 0)
+  const incomeWithoutLinkedOperations = incomeRows
+    .filter((row) => !row.operation_id)
+    .reduce((sum, row) => sum + row.amount, 0)
+  const managementIncome =
+    dashboardSettings.sales_revenue_source === 'operations'
+      ? incomeWithoutLinkedOperations
+      : incomeTotal
+
+  const managementPlusLines = [
+    {
+      id: 'finance_income',
+      label:
+        dashboardSettings.sales_revenue_source === 'operations'
+          ? 'Доходы (финансы, без привязки к операциям)'
+          : 'Доходы (финансы)',
+      amount: managementIncome,
+      enabled: dashboardSettings.include_finance_income
+    },
+    {
+      id: 'sales_revenue',
+      label: 'Выручка с продаж (до скидок)',
+      amount: salesGrossRevenueOnly,
+      enabled:
+        dashboardSettings.include_sales_revenue &&
+        dashboardSettings.sales_revenue_source === 'operations'
+    },
+    {
+      id: 'sales_return_cost',
+      label: 'Возврат себестоимости (возвраты продаж)',
+      amount: salesReturnCostRecovery,
+      enabled: dashboardSettings.include_sales_return_cost_recovery
+    },
+    {
+      id: 'blogger_return_cost',
+      label: 'Возвраты от блогеров (себестоимость)',
+      amount: bloggerReturnCost,
+      enabled: dashboardSettings.include_blogger_return_recovery
+    }
+  ]
+
+  const managementMinusLines = [
+    {
+      id: 'finance_expense',
+      label: 'Расходы (финансы)',
+      amount: expenseTotal,
+      enabled: dashboardSettings.include_finance_expense
+    },
+    {
+      id: 'sales_returns',
+      label: 'Возвраты клиентам (нетто)',
+      amount: salesReturnsNet,
+      enabled: dashboardSettings.include_sale_returns
+    },
+    {
+      id: 'sales_discounts',
+      label: 'Потери на скидках',
+      amount: salesDiscountOnly,
+      enabled: dashboardSettings.include_sales_discounts
+    },
+    {
+      id: 'sales_delivery',
+      label: 'Доставка продаж и возвратов',
+      amount: salesDeliveryExpense,
+      enabled: dashboardSettings.include_sales_delivery
+    },
+    {
+      id: 'sales_cost',
+      label: 'Себестоимость проданных товаров',
+      amount: salesCostOnly,
+      enabled: dashboardSettings.include_sales_cogs
+    },
+    {
+      id: 'blogger_ship_cost',
+      label: 'Отправки блогерам (себестоимость)',
+      amount: shipCost,
+      enabled: dashboardSettings.include_blogger_ship_cost
+    },
+    {
+      id: 'blogger_delivery',
+      label: 'Доставка блогерам',
+      amount: bloggerDeliveryExpense,
+      enabled: dashboardSettings.include_blogger_delivery
+    }
+  ]
+
+  const visibleManagementPlusLines = managementPlusLines.filter((line) => line.enabled)
+  const visibleManagementMinusLines = managementMinusLines.filter((line) => line.enabled)
+
+  const managementPlusTotal = visibleManagementPlusLines.reduce(
+    (sum, line) => sum + line.amount,
+    0
+  )
+  const managementMinusTotal = visibleManagementMinusLines.reduce(
+    (sum, line) => sum + line.amount,
+    0
+  )
+  const managementResult = managementPlusTotal - managementMinusTotal
 
   const summarizeFinance = (rows: FinanceRow[], key: (row: FinanceRow) => string) => {
     const map = new Map<string, { name: string; total: number; count: number }>()
@@ -192,7 +360,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const incomeByCategory = summarizeFinance(incomeRows, (row) => row.category?.name ?? 'Без категории')
   const expenseByCategory = summarizeFinance(expenseRows, (row) => row.category?.name ?? 'Без категории')
 
-  const resetHref = reportType ? `/dashboard?report=${reportType}` : '/dashboard'
+  const todayBaseHref = `/dashboard?from=${today}&to=${today}`
+  const todayHref = reportType ? `${todayBaseHref}&report=${reportType}` : todayBaseHref
+  const allTimeBaseHref = '/dashboard?scope=all'
+  const allTimeHref = reportType ? `${allTimeBaseHref}&report=${reportType}` : allTimeBaseHref
+  const hasNoDataForPeriod =
+    salesRows.length === 0 && bloggerRows.length === 0 && financeRows.length === 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -200,17 +373,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Дашборд</h1>
           <p className="text-sm text-slate-500">
-            {from || to ? (
-              <>
-                Период: {from ?? '…'} — {to ?? '…'}
-              </>
-            ) : (
-              'Сводка за все время'
-            )}
+            {isAllTime ? 'Период: за все время' : `Период: ${from} — ${to}`}
           </p>
         </div>
         <form method="get" className="flex flex-wrap items-end gap-2">
           {reportType ? <input type="hidden" name="report" value={reportType} /> : null}
+          <input type="hidden" name="scope" value="custom" />
           <label className="flex flex-col text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             С
             <input
@@ -233,13 +401,132 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             Показать
           </Button>
           <Link
-            href={resetHref}
+            href={todayHref}
+            className="rounded-full border border-slate-200/70 bg-white/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 transition hover:bg-slate-100/70"
+          >
+            Сегодня
+          </Link>
+          <Link
+            href={allTimeHref}
             className="rounded-full border border-slate-200/70 bg-white/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 transition hover:bg-slate-100/70"
           >
             За все время
           </Link>
         </form>
       </div>
+
+      {!isAllTime && hasNoDataForPeriod ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          За выбранный период данных нет. Попробуйте выбрать другие даты или открыть отчет за все время.
+        </div>
+      ) : null}
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Управленческая сводка</h2>
+            <p className="text-sm text-slate-500">
+              Плюсы и минусы рассчитываются по настройкам из раздела «Справочники».
+            </p>
+          </div>
+          <Link
+            href="/finance/settings"
+            className="rounded-full border border-slate-200/80 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 transition hover:bg-slate-100"
+          >
+            Настроить
+          </Link>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Итог
+            </div>
+            <div
+              className={`text-2xl font-semibold ${
+                managementResult >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}
+            >
+              {formatMoney(managementResult)}
+            </div>
+            <div className="text-[11px] text-slate-500">Плюсы − Минусы</div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+              Плюсы
+            </div>
+            <div className="text-xl font-semibold text-emerald-700">
+              {formatMoney(managementPlusTotal)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
+              Минусы
+            </div>
+            <div className="text-xl font-semibold text-rose-700">
+              {formatMoney(managementMinusTotal)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+              Плюсы
+            </div>
+            <Table className="mt-2">
+              <THead>
+                <TR>
+                  <TH>Компонент</TH>
+                  <TH>Сумма</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visibleManagementPlusLines.length ? (
+                  visibleManagementPlusLines.map((line) => (
+                    <TR key={line.id}>
+                      <TD>{line.label}</TD>
+                      <TD className="font-semibold text-slate-900">{formatMoney(line.amount)}</TD>
+                    </TR>
+                  ))
+                ) : (
+                  <TR>
+                    <TD colSpan={2}>Нет включенных компонентов</TD>
+                  </TR>
+                )}
+              </TBody>
+            </Table>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">
+              Минусы
+            </div>
+            <Table className="mt-2">
+              <THead>
+                <TR>
+                  <TH>Компонент</TH>
+                  <TH>Сумма</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visibleManagementMinusLines.length ? (
+                  visibleManagementMinusLines.map((line) => (
+                    <TR key={line.id}>
+                      <TD>{line.label}</TD>
+                      <TD className="font-semibold text-slate-900">{formatMoney(line.amount)}</TD>
+                    </TR>
+                  ))
+                ) : (
+                  <TR>
+                    <TD colSpan={2}>Нет включенных компонентов</TD>
+                  </TR>
+                )}
+              </TBody>
+            </Table>
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <h2 className="text-lg font-semibold text-slate-900">Продажи</h2>
@@ -439,6 +726,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <form method="get" className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
           {from ? <input type="hidden" name="from" value={from} /> : null}
           {to ? <input type="hidden" name="to" value={to} /> : null}
+          {isAllTime ? <input type="hidden" name="scope" value="all" /> : null}
           <Field label="Тип отчета">
             <select
               name="report"

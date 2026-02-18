@@ -162,7 +162,19 @@ begin
     end if;
 
     v_cost := v_variant_cost;
-    v_price := coalesce((v_line->>'unit_price_snapshot')::int, v_variant_price);
+    v_price := coalesce(
+      (v_line->>'unit_price_snapshot')::int,
+      (
+        select h.unit_price
+        from public.product_variant_price_history h
+        where h.user_id = v_user
+          and h.variant_id = v_variant_id
+          and h.effective_at <= v_occurred_at
+        order by h.effective_at desc
+        limit 1
+      ),
+      v_variant_price
+    );
     v_line_note := v_line->>'line_note';
     v_marking_not_handled := coalesce((v_line->>'marking_not_handled')::boolean, false);
 
@@ -217,6 +229,9 @@ begin
       );
     elsif v_type = 'adjustment' then
       v_adj_delta := coalesce((v_line->>'qty_delta')::int, v_qty);
+      if v_adj_delta = 0 then
+        raise exception 'qty_delta must not be 0 for adjustment';
+      end if;
       v_loc_for_adjustment := coalesce(v_to_location, v_from_location);
       if v_loc_for_adjustment is null then
         raise exception 'location_id is required for adjustment';
@@ -454,7 +469,19 @@ begin
     end if;
 
     v_cost := v_variant_cost;
-    v_price := coalesce((v_line->>'unit_price_snapshot')::int, v_variant_price);
+    v_price := coalesce(
+      (v_line->>'unit_price_snapshot')::int,
+      (
+        select h.unit_price
+        from public.product_variant_price_history h
+        where h.user_id = v_user
+          and h.variant_id = v_variant_id
+          and h.effective_at <= v_occurred_at
+        order by h.effective_at desc
+        limit 1
+      ),
+      v_variant_price
+    );
     v_line_note := v_line->>'line_note';
     v_marking_not_handled := coalesce((v_line->>'marking_not_handled')::boolean, false);
 
@@ -513,6 +540,9 @@ begin
       );
     elsif v_type = 'adjustment' then
       v_adj_delta := coalesce((v_line->>'qty_delta')::int, v_qty);
+      if v_adj_delta = 0 then
+        raise exception 'qty_delta must not be 0 for adjustment';
+      end if;
       v_loc_for_adjustment := coalesce(v_to_location, v_from_location);
       if v_loc_for_adjustment is null then
         raise exception 'location_id is required for adjustment';
@@ -588,5 +618,146 @@ begin
   end loop;
 
   return v_operation_id;
+end;
+$$;
+
+create or replace function public.apply_variant_price_from_date(
+  p_variant_id uuid,
+  p_unit_price integer,
+  p_effective_at timestamptz
+)
+returns jsonb
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_user uuid;
+  v_effective_at timestamptz := p_effective_at;
+  v_current_variant_price integer;
+  v_now_effective_price integer;
+  v_recalculated_lines integer := 0;
+  v_recalculated_movements integer := 0;
+begin
+  v_user := auth.uid();
+  if v_user is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if p_variant_id is null then
+    raise exception 'variant_id is required';
+  end if;
+
+  if p_unit_price is null or p_unit_price < 0 then
+    raise exception 'unit_price must be >= 0';
+  end if;
+
+  if v_effective_at is null then
+    raise exception 'effective_at is required';
+  end if;
+
+  select unit_price
+    into v_current_variant_price
+  from public.product_variants
+  where id = p_variant_id
+    and user_id = v_user;
+
+  if not found then
+    raise exception 'variant not found';
+  end if;
+
+  if not exists (
+    select 1
+    from public.product_variant_price_history h
+    where h.user_id = v_user
+      and h.variant_id = p_variant_id
+  ) then
+    insert into public.product_variant_price_history (
+      user_id,
+      variant_id,
+      unit_price,
+      effective_at
+    ) values (
+      v_user,
+      p_variant_id,
+      v_current_variant_price,
+      '1900-01-01 00:00:00+00'::timestamptz
+    )
+    on conflict (user_id, variant_id, effective_at) do nothing;
+  end if;
+
+  insert into public.product_variant_price_history (
+    user_id,
+    variant_id,
+    unit_price,
+    effective_at
+  ) values (
+    v_user,
+    p_variant_id,
+    p_unit_price,
+    v_effective_at
+  )
+  on conflict (user_id, variant_id, effective_at) do update set
+    unit_price = excluded.unit_price;
+
+  update public.operation_lines ol
+  set unit_price_snapshot = hp.unit_price
+  from public.operations o
+  join lateral (
+    select h.unit_price
+    from public.product_variant_price_history h
+    where h.user_id = v_user
+      and h.variant_id = p_variant_id
+      and h.effective_at <= o.occurred_at
+    order by h.effective_at desc
+    limit 1
+  ) hp on true
+  where ol.operation_id = o.id
+    and ol.variant_id = p_variant_id
+    and o.user_id = v_user
+    and o.occurred_at >= v_effective_at;
+
+  get diagnostics v_recalculated_lines = row_count;
+
+  update public.stock_movements sm
+  set unit_price_snapshot = hp.unit_price
+  from public.operations o
+  join lateral (
+    select h.unit_price
+    from public.product_variant_price_history h
+    where h.user_id = v_user
+      and h.variant_id = p_variant_id
+      and h.effective_at <= o.occurred_at
+    order by h.effective_at desc
+    limit 1
+  ) hp on true
+  where sm.operation_id = o.id
+    and sm.variant_id = p_variant_id
+    and sm.user_id = v_user
+    and o.user_id = v_user
+    and o.occurred_at >= v_effective_at;
+
+  get diagnostics v_recalculated_movements = row_count;
+
+  select h.unit_price
+    into v_now_effective_price
+  from public.product_variant_price_history h
+  where h.user_id = v_user
+    and h.variant_id = p_variant_id
+    and h.effective_at <= now()
+  order by h.effective_at desc
+  limit 1;
+
+  update public.product_variants
+  set unit_price = coalesce(v_now_effective_price, unit_price)
+  where id = p_variant_id
+    and user_id = v_user;
+
+  return jsonb_build_object(
+    'variant_id', p_variant_id,
+    'unit_price', p_unit_price,
+    'effective_at', v_effective_at,
+    'recalculated_lines', v_recalculated_lines,
+    'recalculated_movements', v_recalculated_movements
+  );
 end;
 $$;

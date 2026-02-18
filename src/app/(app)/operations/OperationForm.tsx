@@ -14,7 +14,7 @@ import { formatMoney, intToMoneyInput, moneyToInt } from '@/lib/money'
 
 const lineSchema = z.object({
   variant_id: z.string().min(1, 'Выберите SKU'),
-  qty: z.coerce.number().int().positive(),
+  qty: z.coerce.number().int(),
   unit_price_snapshot: z.string().optional(),
   line_note: z.string().optional(),
   mark_codes: z.array(z.string()).optional(),
@@ -43,6 +43,27 @@ const schema = z.object({
   tracking_number: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
   lines: z.array(lineSchema).min(1, 'Добавьте хотя бы один товар')
+}).superRefine((values, ctx) => {
+  values.lines.forEach((line, index) => {
+    if (values.type === 'adjustment') {
+      if (!Number.isInteger(line.qty) || line.qty === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Для корректировки укажите изменение количества (не 0)',
+          path: ['lines', index, 'qty']
+        })
+      }
+      return
+    }
+
+    if (!Number.isInteger(line.qty) || line.qty <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Количество должно быть больше 0',
+        path: ['lines', index, 'qty']
+      })
+    }
+  })
 })
 
 export type OperationFormValues = z.infer<typeof schema>
@@ -260,12 +281,18 @@ export default function OperationForm({
       delivery_service: normalize(values.delivery_service),
       tracking_number: normalize(values.tracking_number),
       note: normalize(values.note),
-      lines: values.lines.map((line) => ({
-        ...line,
-        unit_price_snapshot: line.unit_price_snapshot
-          ? moneyToInt(line.unit_price_snapshot)
-          : undefined
-      }))
+      lines: values.lines.map((line) => {
+        const rawQty = Number(line.qty ?? 0)
+        const isAdjustment = values.type === 'adjustment'
+        return {
+          ...line,
+          qty: isAdjustment ? Math.max(1, Math.abs(rawQty)) : rawQty,
+          qty_delta: isAdjustment ? rawQty : undefined,
+          unit_price_snapshot: line.unit_price_snapshot
+            ? moneyToInt(line.unit_price_snapshot)
+            : undefined
+        }
+      })
     }
 
     startTransition(async () => {
@@ -466,7 +493,12 @@ export default function OperationForm({
       setLineError('Выберите товар')
       return
     }
-    if (!Number.isFinite(qty) || qty <= 0) {
+    if (selectedType === 'adjustment') {
+      if (!Number.isFinite(qty) || qty === 0) {
+        setLineError('Укажите изменение количества (не 0)')
+        return
+      }
+    } else if (!Number.isFinite(qty) || qty <= 0) {
       setLineError('Укажите количество')
       return
     }
@@ -686,10 +718,16 @@ export default function OperationForm({
                   </select>
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Кол-во">
+                  <Field
+                    label={
+                      selectedType === 'adjustment'
+                        ? 'Изменение (+/-)'
+                        : 'Кол-во'
+                    }
+                  >
                     <input
                       type="number"
-                      min={1}
+                      min={selectedType === 'adjustment' ? undefined : 1}
                       className="rounded-xl border border-slate-200 px-3 py-2"
                       value={lineDraft.qty}
                       onChange={(event) =>
@@ -773,7 +811,7 @@ export default function OperationForm({
                       <TD>
                         <input
                           type="number"
-                          min={1}
+                          min={selectedType === 'adjustment' ? undefined : 1}
                           className="w-20 rounded-xl border border-slate-200 px-2 py-1 text-sm"
                           {...form.register(`lines.${index}.qty` as const)}
                         />

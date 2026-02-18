@@ -2,6 +2,96 @@
 
 import { createClient } from '@/lib/supabase/server'
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+const normalizeOptionalId = (value?: string | null) => {
+  const trimmed = (value ?? '').trim()
+  return trimmed.length ? trimmed : null
+}
+
+async function resolveCounterpartyId(
+  supabase: SupabaseClient,
+  userId: string,
+  counterpartyName?: string | null
+) {
+  const name = (counterpartyName ?? '').trim()
+  if (!name) return { id: null as string | null }
+
+  const { data: existing, error: existingError } = await supabase
+    .from('counterparties')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('name', name)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingError) return { error: existingError.message }
+
+  if (existing?.id) {
+    return { id: existing.id }
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('counterparties')
+    .insert({
+      user_id: userId,
+      name,
+      type: 'other'
+    })
+    .select('id')
+    .single()
+
+  if (insertError) return { error: insertError.message }
+  return { id: inserted?.id ?? null }
+}
+
+async function resolvePaymentSourceId(
+  supabase: SupabaseClient,
+  userId: string,
+  paymentSourceId?: string | null
+) {
+  const normalizedId = normalizeOptionalId(paymentSourceId)
+  if (!normalizedId) return { id: null as string | null }
+
+  const { data, error } = await supabase
+    .from('payment_sources')
+    .select('id')
+    .eq('id', normalizedId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Payment source not found' }
+
+  return { id: data.id }
+}
+
+async function resolveCategoryId(
+  supabase: SupabaseClient,
+  userId: string,
+  financeType: string,
+  categoryId?: string | null
+) {
+  const normalizedId = normalizeOptionalId(categoryId)
+  if (!normalizedId) return { id: null as string | null }
+
+  const { data, error } = await supabase
+    .from('expense_categories')
+    .select('id, kind')
+    .eq('id', normalizedId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Category not found' }
+  if (data.kind !== financeType) {
+    return { error: 'Category type does not match transaction type' }
+  }
+
+  return { id: data.id }
+}
+
 export async function createPaymentSource(values: {
   name: string
   legal_entity_id?: string | null
@@ -315,48 +405,127 @@ export async function createFinanceTransaction(values: {
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  let counterpartyId: string | null = null
-  if (values.counterparty_name && values.counterparty_name.trim().length > 0) {
-    const name = values.counterparty_name.trim()
-    const { data: existing } = await supabase
-      .from('counterparties')
-      .select('id')
-      .eq('user_id', user.id)
-      .ilike('name', name)
-      .maybeSingle()
+  const paymentSourceResult = await resolvePaymentSourceId(
+    supabase,
+    user.id,
+    values.payment_source_id
+  )
+  if (paymentSourceResult.error) return { error: paymentSourceResult.error }
 
-    if (existing?.id) {
-      counterpartyId = existing.id
-    } else {
-      const { data: inserted, error: insertError } = await supabase
-        .from('counterparties')
-        .insert({
-          user_id: user.id,
-          name,
-          type: 'other'
-        })
-        .select('id')
-        .single()
+  const categoryResult = await resolveCategoryId(
+    supabase,
+    user.id,
+    values.type,
+    values.category_id
+  )
+  if (categoryResult.error) return { error: categoryResult.error }
 
-      if (insertError) return { error: insertError.message }
-      counterpartyId = inserted?.id ?? null
-    }
-  }
+  const counterpartyResult = await resolveCounterpartyId(
+    supabase,
+    user.id,
+    values.counterparty_name
+  )
+  if (counterpartyResult.error) return { error: counterpartyResult.error }
 
   const { error } = await supabase.from('finance_transactions').insert({
     user_id: user.id,
     occurred_at: values.occurred_at,
     type: values.type,
     amount: values.amount,
-    payment_source_id: values.payment_source_id ?? null,
+    payment_source_id: paymentSourceResult.id,
     legal_entity_id: values.legal_entity_id ?? null,
-    category_id: values.category_id ?? null,
-    counterparty_id: counterpartyId,
+    category_id: categoryResult.id,
+    counterparty_id: counterpartyResult.id,
     note: values.note ?? null,
     attachment_url: values.attachment_url ?? null
   })
 
   if (error) return { error: error.message }
+  return { ok: true }
+}
+
+export async function updateFinanceTransaction(
+  transactionId: string,
+  values: {
+    occurred_at: string
+    type: string
+    amount: number
+    payment_source_id?: string | null
+    category_id?: string | null
+    counterparty_name?: string | null
+    note?: string | null
+    attachment_url?: string | null
+  }
+) {
+  const supabase = await createClient()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const paymentSourceResult = await resolvePaymentSourceId(
+    supabase,
+    user.id,
+    values.payment_source_id
+  )
+  if (paymentSourceResult.error) return { error: paymentSourceResult.error }
+
+  const categoryResult = await resolveCategoryId(
+    supabase,
+    user.id,
+    values.type,
+    values.category_id
+  )
+  if (categoryResult.error) return { error: categoryResult.error }
+
+  const counterpartyResult = await resolveCounterpartyId(
+    supabase,
+    user.id,
+    values.counterparty_name
+  )
+  if (counterpartyResult.error) return { error: counterpartyResult.error }
+
+  const { data, error } = await supabase
+    .from('finance_transactions')
+    .update({
+      occurred_at: values.occurred_at,
+      type: values.type,
+      amount: values.amount,
+      payment_source_id: paymentSourceResult.id,
+      category_id: categoryResult.id,
+      counterparty_id: counterpartyResult.id,
+      note: values.note ?? null,
+      attachment_url: values.attachment_url ?? null
+    })
+    .eq('id', transactionId)
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Transaction not found' }
+
+  return { ok: true }
+}
+
+export async function deleteFinanceTransaction(transactionId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('finance_transactions')
+    .delete()
+    .eq('id', transactionId)
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Transaction not found' }
+
   return { ok: true }
 }
 

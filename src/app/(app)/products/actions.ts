@@ -7,13 +7,35 @@ const normalizeSkuPart = (value: string) =>
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '-')
-    .replace(/[^0-9A-ZА-ЯЁ_-]/g, '')
+    .replace(/[^\p{L}\p{N}_-]/gu, '')
     .replace(/-+/g, '-')
 
 const buildSku = (name: string, color: string, size: string) =>
   [normalizeSkuPart(name), normalizeSkuPart(color), normalizeSkuPart(size)]
     .filter(Boolean)
     .join('-')
+
+const normalizeEffectiveAt = (effectiveAt?: string | null) => {
+  if (!effectiveAt) return new Date().toISOString()
+  const parsed = new Date(effectiveAt)
+  if (!Number.isFinite(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
+const getRecalculationCounts = (payload: unknown) => {
+  if (!payload || typeof payload !== 'object') {
+    return { recalculatedLines: 0, recalculatedMovements: 0 }
+  }
+
+  const record = payload as Record<string, unknown>
+  const rawLines = Number(record.recalculated_lines)
+  const rawMovements = Number(record.recalculated_movements)
+
+  return {
+    recalculatedLines: Number.isFinite(rawLines) ? rawLines : 0,
+    recalculatedMovements: Number.isFinite(rawMovements) ? rawMovements : 0
+  }
+}
 
 export async function createModel(values: {
   name: string
@@ -67,6 +89,11 @@ export async function createModel(values: {
       .from('product_variants')
       .insert(variantsPayload)
     if (variantsError) {
+      await supabase
+        .from('product_models')
+        .delete()
+        .eq('id', data.id)
+        .eq('user_id', user.id)
       return { error: variantsError.message }
     }
   }
@@ -84,7 +111,15 @@ export async function updateModel(
   }
 ) {
   const supabase = await createClient()
-  const { error } = await supabase
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Not authenticated' }
+  }
+
+  const { data, error } = await supabase
     .from('product_models')
     .update({
       name: values.name,
@@ -92,13 +127,20 @@ export async function updateModel(
       main_image_url: values.main_image_url ?? null,
       is_active: values.is_active ?? true
     })
+    .eq('user_id', user.id)
     .eq('id', id)
+    .select('id')
+    .maybeSingle()
 
   if (error) {
     return { error: error.message }
   }
 
-  return { id }
+  if (!data) {
+    return { error: 'Model not found' }
+  }
+
+  return { id: data.id }
 }
 
 export async function deleteModel(id: string) {
@@ -111,10 +153,20 @@ export async function deleteModel(id: string) {
     return { error: 'Not authenticated' }
   }
 
-  const { error } = await supabase.from('product_models').delete().eq('id', id)
+  const { data, error } = await supabase
+    .from('product_models')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle()
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (!data) {
+    return { error: 'Model not found' }
   }
 
   return { ok: true }
@@ -145,7 +197,8 @@ export async function archiveModel(id: string) {
 
 export async function updateVariantPrice(
   variantId: string,
-  unitPrice: number
+  unitPrice: number,
+  effectiveAt?: string | null
 ) {
   const supabase = await createClient()
   const {
@@ -160,17 +213,24 @@ export async function updateVariantPrice(
     return { error: 'Invalid price' }
   }
 
-  const { error } = await supabase
-    .from('product_variants')
-    .update({ unit_price: unitPrice })
-    .eq('id', variantId)
-    .eq('user_id', user.id)
+  const normalizedEffectiveAt = normalizeEffectiveAt(effectiveAt)
+  if (!normalizedEffectiveAt) {
+    return { error: 'Invalid effective date' }
+  }
+
+  const { data, error } = await supabase.rpc('apply_variant_price_from_date', {
+    p_variant_id: variantId,
+    p_unit_price: unitPrice,
+    p_effective_at: normalizedEffectiveAt
+  })
 
   if (error) {
     return { error: error.message }
   }
 
-  return { ok: true }
+  const { recalculatedLines, recalculatedMovements } = getRecalculationCounts(data)
+
+  return { ok: true, recalculatedLines, recalculatedMovements }
 }
 
 export async function updateVariantDetails(
@@ -180,6 +240,7 @@ export async function updateVariantDetails(
     color?: string | null
     unit_price: number
     unit_cost: number
+    price_effective_at?: string | null
   }
 ) {
   const supabase = await createClient()
@@ -199,12 +260,29 @@ export async function updateVariantDetails(
     return { error: 'Invalid cost' }
   }
 
+  const normalizedEffectiveAt = normalizeEffectiveAt(values.price_effective_at)
+  if (!normalizedEffectiveAt) {
+    return { error: 'Invalid effective date' }
+  }
+
+  const { data: priceData, error: priceError } = await supabase.rpc(
+    'apply_variant_price_from_date',
+    {
+      p_variant_id: variantId,
+      p_unit_price: values.unit_price,
+      p_effective_at: normalizedEffectiveAt
+    }
+  )
+
+  if (priceError) {
+    return { error: priceError.message }
+  }
+
   const { error } = await supabase
     .from('product_variants')
     .update({
       size: values.size ?? null,
       color: values.color ?? null,
-      unit_price: values.unit_price,
       unit_cost: values.unit_cost
     })
     .eq('id', variantId)
@@ -214,12 +292,16 @@ export async function updateVariantDetails(
     return { error: error.message }
   }
 
-  return { ok: true }
+  const { recalculatedLines, recalculatedMovements } =
+    getRecalculationCounts(priceData)
+
+  return { ok: true, recalculatedLines, recalculatedMovements }
 }
 
 export async function bulkUpdateVariantPrices(
   modelId: string,
-  unitPrice: number
+  unitPrice: number,
+  effectiveAt?: string | null
 ) {
   const supabase = await createClient()
   const {
@@ -234,17 +316,51 @@ export async function bulkUpdateVariantPrices(
     return { error: 'Invalid price' }
   }
 
-  const { error } = await supabase
+  const normalizedEffectiveAt = normalizeEffectiveAt(effectiveAt)
+  if (!normalizedEffectiveAt) {
+    return { error: 'Invalid effective date' }
+  }
+
+  const { data: variants, error: variantsError } = await supabase
     .from('product_variants')
-    .update({ unit_price: unitPrice })
+    .select('id')
     .eq('model_id', modelId)
     .eq('user_id', user.id)
 
-  if (error) {
-    return { error: error.message }
+  if (variantsError) {
+    return { error: variantsError.message }
   }
 
-  return { ok: true }
+  const variantIds = (variants ?? []).map((variant) => variant.id)
+
+  let recalculatedLines = 0
+  let recalculatedMovements = 0
+
+  for (const variantId of variantIds) {
+    const { data: priceData, error: priceError } = await supabase.rpc(
+      'apply_variant_price_from_date',
+      {
+        p_variant_id: variantId,
+        p_unit_price: unitPrice,
+        p_effective_at: normalizedEffectiveAt
+      }
+    )
+
+    if (priceError) {
+      return { error: priceError.message }
+    }
+
+    const counts = getRecalculationCounts(priceData)
+    recalculatedLines += counts.recalculatedLines
+    recalculatedMovements += counts.recalculatedMovements
+  }
+
+  return {
+    ok: true,
+    updatedVariants: variantIds.length,
+    recalculatedLines,
+    recalculatedMovements
+  }
 }
 
 export async function createVariant(
@@ -380,4 +496,3 @@ export async function deleteTechCard(modelId: string) {
 
   return { ok: true }
 }
-

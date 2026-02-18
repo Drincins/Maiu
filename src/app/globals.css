@@ -29,6 +29,8 @@
 :root {
   color-scheme: light;
   --font-brand: 'HeliosExtC';
+  --font-body: 'HeliosExtC', 'Segoe UI', Tahoma, sans-serif;
+  --font-display: 'HeliosExtC', Georgia, 'Times New Roman', serif;
   --brand-600: #8b1522;
   --brand-500: #a03340;
   --ink: #1b1b1b;

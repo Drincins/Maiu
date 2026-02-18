@@ -18,7 +18,8 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
     { data: promoCodes },
     { data: operation, error: operationError },
     { data: lines, error: linesError },
-    { data: markCodes, error: markCodesError }
+    { data: markCodes, error: markCodesError },
+    { data: stockMovements, error: stockMovementsError }
   ] = await Promise.all([
     supabase
       .from('product_variants')
@@ -41,7 +42,11 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
     supabase
       .from('mark_codes')
       .select('variant_id, code')
-      .eq('last_operation_id', operationId)
+      .eq('last_operation_id', operationId),
+    supabase
+      .from('stock_movements')
+      .select('operation_line_id, qty_delta')
+      .eq('operation_id', operationId)
   ])
 
   if (!operation || operationError) {
@@ -70,6 +75,16 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
     codesByVariant.set(row.variant_id, existing)
   })
 
+  const adjustmentDeltaByLine = new Map<string, number>()
+  ;(stockMovements ?? []).forEach((movement) => {
+    if (!movement?.operation_line_id) return
+    const current = adjustmentDeltaByLine.get(movement.operation_line_id) ?? 0
+    adjustmentDeltaByLine.set(
+      movement.operation_line_id,
+      current + Number(movement.qty_delta ?? 0)
+    )
+  })
+
   const initialValues: OperationFormValues = {
     type: operation.type,
     occurred_at: operation.occurred_at
@@ -94,9 +109,14 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
         const cleanedNote = markingNotHandled
           ? note.replace(MARKING_NOTE, '').trim()
           : note
+        const adjustmentDelta = adjustmentDeltaByLine.get(line.id)
+        const qtyValue =
+          operation.type === 'adjustment' && adjustmentDelta !== undefined
+            ? adjustmentDelta
+            : Number(line.qty ?? 0)
         return {
           variant_id: line.variant_id,
-          qty: Number(line.qty ?? 0),
+          qty: qtyValue,
           unit_price_snapshot:
             line.unit_price_snapshot !== null && line.unit_price_snapshot !== undefined
               ? intToMoneyInput(line.unit_price_snapshot)
@@ -108,6 +128,8 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
       }) ?? []
   }
 
+  const preloadError = linesError ?? markCodesError ?? stockMovementsError
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -116,6 +138,11 @@ export default async function OperationEditPage({ params }: OperationEditPagePro
           Изменения пересчитают движения склада
         </p>
       </div>
+      {preloadError ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Часть данных загружена не полностью: {preloadError.message}
+        </div>
+      ) : null}
       <OperationForm
         variants={variants ?? []}
         locations={locations ?? []}

@@ -96,6 +96,25 @@ const computeLineCost = (usage: number | null, unitPrice: number | null) => {
   return Math.round(usage * unitPrice)
 }
 
+const TrashIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4h8v2" />
+    <path d="M6 6l1 14h10l1-14" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+  </svg>
+)
+
 export default function TechCardClient({
   model,
   variants,
@@ -260,15 +279,16 @@ export default function TechCardClient({
             </div>
             <div className="flex flex-wrap gap-2">
               {techCardId ? (
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  className="border border-rose-200 text-rose-600 hover:bg-rose-50"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
                   onClick={handleDelete}
                   disabled={deletePending}
+                  title="Удалить техкарту"
+                  aria-label="Удалить техкарту"
                 >
-                  Удалить
-                </Button>
+                  <TrashIcon className="h-4 w-4" />
+                </button>
               ) : null}
               <Button type="submit" disabled={isPending}>
                 Сохранить
@@ -403,14 +423,15 @@ export default function TechCardClient({
                   </TD>
                   <TD className="whitespace-nowrap text-slate-900">{formatMoney(cost)}</TD>
                   <TD>
-                    <Button
+                    <button
                       type="button"
-                      variant="ghost"
-                      className="px-3"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
                       onClick={() => remove(index)}
+                      title="Удалить строку"
+                      aria-label="Удалить строку"
                     >
-                      Удалить
-                    </Button>
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
                   </TD>
                 </TR>
               )

@@ -49,6 +49,51 @@ type ProductDetailClientProps = {
   variants: Variant[]
 }
 
+const PencilIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z" />
+  </svg>
+)
+
+const TrashIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4h8v2" />
+    <path d="M6 6l1 14h10l1-14" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+  </svg>
+)
+
+const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10)
+
+const dateInputToIso = (value: string) => {
+  const normalized = value.trim()
+  if (!normalized) return new Date().toISOString()
+  const parsed = new Date(`${normalized}T00:00:00`)
+  if (!Number.isFinite(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
 export default function ProductDetailClient({
   model,
   variants
@@ -60,7 +105,11 @@ export default function ProductDetailClient({
   const [pendingVariantId, setPendingVariantId] = useState<string | null>(null)
   const [variantError, setVariantError] = useState<string | null>(null)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const [priceSuccess, setPriceSuccess] = useState<string | null>(null)
   const [bulkPrice, setBulkPrice] = useState('')
+  const [priceEffectiveDate, setPriceEffectiveDate] = useState(() =>
+    toDateInputValue(new Date())
+  )
   const [editVariantId, setEditVariantId] = useState<string | null>(null)
   const [variantDrafts, setVariantDrafts] = useState<
     Record<string, { size: string; color: string; price: string; cost: string }>
@@ -171,31 +220,52 @@ export default function ProductDetailClient({
   const handleVariantSave = (variant: Variant) => {
     const draft = variantDrafts[variant.id]
     if (!draft) return
+
     const unitPrice = parseMoneyInput(draft.price)
     if (unitPrice === null) {
-      setVariantError('Введите корректную цену')
+      setPriceSuccess(null)
+      setVariantError('Enter a valid price')
       return
     }
+
     const unitCost = parseMoneyInput(draft.cost)
     if (unitCost === null) {
-      setVariantError('Введите корректную себестоимость')
+      setPriceSuccess(null)
+      setVariantError('Enter a valid cost')
       return
     }
+
+    const effectiveAt = dateInputToIso(priceEffectiveDate)
+    if (!effectiveAt) {
+      setPriceSuccess(null)
+      setVariantError('Enter a valid effective date')
+      return
+    }
+
+    setPriceSuccess(null)
+    setBulkError(null)
     setVariantError(null)
     setPendingVariantId(variant.id)
+
     startPriceTransition(async () => {
       const result = await updateVariantDetails(variant.id, {
         size: draft.size.trim() || null,
         color: draft.color.trim() || null,
         unit_price: unitPrice,
-        unit_cost: unitCost
+        unit_cost: unitCost,
+        price_effective_at: effectiveAt
       })
+
       if (result?.error) {
         setVariantError(result.error)
       } else {
+        setPriceSuccess(
+          `Price effective from ${priceEffectiveDate}. Recalculated ${result?.recalculatedLines ?? 0} operation lines and ${result?.recalculatedMovements ?? 0} stock movements.`
+        )
         setEditVariantId(null)
         router.refresh()
       }
+
       setPendingVariantId(null)
     })
   }
@@ -203,15 +273,31 @@ export default function ProductDetailClient({
   const handleBulkPriceSave = () => {
     const cents = parseMoneyInput(bulkPrice)
     if (cents === null) {
-      setBulkError('Введите корректную цену')
+      setPriceSuccess(null)
+      setBulkError('Enter a valid price')
       return
     }
+
+    const effectiveAt = dateInputToIso(priceEffectiveDate)
+    if (!effectiveAt) {
+      setPriceSuccess(null)
+      setBulkError('Enter a valid effective date')
+      return
+    }
+
+    setPriceSuccess(null)
+    setVariantError(null)
     setBulkError(null)
+
     startPriceTransition(async () => {
-      const result = await bulkUpdateVariantPrices(model.id, cents)
+      const result = await bulkUpdateVariantPrices(model.id, cents, effectiveAt)
+
       if (result?.error) {
         setBulkError(result.error)
       } else {
+        setPriceSuccess(
+          `Price effective from ${priceEffectiveDate} for ${result?.updatedVariants ?? variants.length} SKU. Recalculated ${result?.recalculatedLines ?? 0} operation lines and ${result?.recalculatedMovements ?? 0} stock movements.`
+        )
         setBulkPrice('')
         router.refresh()
       }
@@ -274,15 +360,16 @@ export default function ProductDetailClient({
             <Button type="submit" disabled={modelPending}>
               Сохранить изменения
             </Button>
-            <Button
+            <button
               type="button"
-              variant="secondary"
-              className="border border-rose-200 text-rose-600 hover:bg-rose-50"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
               onClick={handleDelete}
               disabled={modelPending}
+              title="Удалить карточку товара"
+              aria-label="Удалить карточку товара"
             >
-              Удалить карточку
-            </Button>
+              <TrashIcon className="h-4 w-4" />
+            </button>
           </div>
         </form>
       </Card>
@@ -292,22 +379,38 @@ export default function ProductDetailClient({
           <h2 className="text-lg font-semibold text-slate-900">SKU</h2>
           <span className="text-sm text-slate-500">{variants.length} шт.</span>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <Field label="Новая цена для всех SKU">
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,220px)_auto] sm:items-end">
+          <Field label="New price for all SKU">
             <input
               className="rounded-xl border border-slate-200 px-3 py-2"
-              placeholder="Например 1990.00"
+              placeholder="For example 1990.00"
               value={bulkPrice}
               onChange={(event) => setBulkPrice(event.target.value)}
             />
           </Field>
+          <Field label="Effective from date">
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 px-3 py-2"
+              value={priceEffectiveDate}
+              onChange={(event) => setPriceEffectiveDate(event.target.value)}
+            />
+          </Field>
           <Button type="button" onClick={handleBulkPriceSave} disabled={pricePending}>
-            Обновить все
+            Update all
           </Button>
         </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Selected date is also used when saving price in a single SKU row.
+        </p>
         {bulkError ? (
           <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
             {bulkError}
+          </div>
+        ) : null}
+        {priceSuccess ? (
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {priceSuccess}
           </div>
         ) : null}
         {variantError ? (
@@ -407,18 +510,20 @@ export default function ProductDetailClient({
                         </Button>
                       </div>
                     ) : (
-                      <Button
+                      <button
                         type="button"
-                        variant="ghost"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-brand-200 hover:text-brand-700 disabled:opacity-60"
                         onClick={() => {
                           resetVariantDraft(variant)
                           setEditVariantId(variant.id)
                           setVariantError(null)
                         }}
                         disabled={pricePending}
+                        title="Редактировать"
+                        aria-label="Редактировать"
                       >
-                        Редактировать
-                      </Button>
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
                     )}
                   </TD>
                 </TR>

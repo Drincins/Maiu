@@ -59,8 +59,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? reportParam
     : ''
 
-  const fromISO = from ? new Date(`${from}T00:00:00`).toISOString() : null
-  const toISO = to ? new Date(`${to}T23:59:59.999`).toISOString() : null
+  const toBoundaryIso = (value: string | null, boundary: 'start' | 'end') => {
+    if (!value) return null
+    const source = boundary === 'start' ? `${value}T00:00:00` : `${value}T23:59:59.999`
+    const parsed = new Date(source)
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }
+
+  const fromISO = toBoundaryIso(from, 'start')
+  const toISO = toBoundaryIso(to, 'end')
 
   const applyDateFilter = (query: any) => {
     let next = query

@@ -429,9 +429,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </Link>
           <Link
             href={exportHref}
-            className="rounded-full border border-emerald-200/80 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 transition hover:bg-emerald-100/70"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-brand-200/80 bg-brand-50 text-brand-700 transition hover:bg-brand-100/80"
+            title="Скачать Excel"
+            aria-label="Скачать Excel"
           >
-            Excel
+            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+              <path
+                d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M14 2v6h6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 11.5l4 5M13 11.5l-4 5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </Link>
         </form>
       </div>

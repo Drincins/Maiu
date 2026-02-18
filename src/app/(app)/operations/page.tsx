@@ -11,9 +11,30 @@ export default async function OperationsPage() {
 
   const { data: operations, error: operationsError } = await supabase
     .from('operations')
-    .select(
-      'id, type, occurred_at, city, delivery_cost, note, from_location_id, to_location_id, promo_code_id'
-    )
+    .select(`
+      id,
+      type,
+      occurred_at,
+      city,
+      delivery_cost,
+      note,
+      from_location_id,
+      to_location_id,
+      promo_code_id,
+      operation_lines (
+        qty,
+        unit_price_snapshot,
+        unit_cost_snapshot,
+        product_variants (
+          sku,
+          size,
+          color,
+          product_models (
+            name
+          )
+        )
+      )
+    `)
     .order('occurred_at', { ascending: false })
     .limit(500)
 
@@ -101,6 +122,39 @@ export default async function OperationsPage() {
             from_location_id: string | null
             to_location_id: string | null
             promo_code_id: string | null
+            operation_lines?: Array<{
+              qty: number
+              unit_price_snapshot: number | null
+              unit_cost_snapshot: number | null
+              product_variants?:
+                | {
+                    sku: string | null
+                    size: string | null
+                    color: string | null
+                    product_models?:
+                      | {
+                          name: string | null
+                        }
+                      | Array<{
+                          name: string | null
+                        }>
+                      | null
+                  }
+                | Array<{
+                    sku: string | null
+                    size: string | null
+                    color: string | null
+                    product_models?:
+                      | {
+                          name: string | null
+                        }
+                      | Array<{
+                          name: string | null
+                        }>
+                      | null
+                  }>
+                | null
+            }>
           }>}
           locations={(locations ?? []) as Array<{ id: string; name: string }>}
           issueOperationIds={(issueLines ?? []).map((line) => line.operation_id)}

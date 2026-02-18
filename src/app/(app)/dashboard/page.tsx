@@ -371,6 +371,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const todayHref = reportType ? `${todayBaseHref}&report=${reportType}` : todayBaseHref
   const allTimeBaseHref = '/dashboard?scope=all'
   const allTimeHref = reportType ? `${allTimeBaseHref}&report=${reportType}` : allTimeBaseHref
+  const exportParams = new URLSearchParams()
+  if (isAllTime) {
+    exportParams.set('scope', 'all')
+  } else {
+    if (from) exportParams.set('from', from)
+    if (to) exportParams.set('to', to)
+  }
+  const exportHref = `/dashboard/export?${exportParams.toString()}`
   const hasNoDataForPeriod =
     salesRows.length === 0 && bloggerRows.length === 0 && financeRows.length === 0
 
@@ -418,6 +426,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className="rounded-full border border-slate-200/70 bg-white/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 transition hover:bg-slate-100/70"
           >
             За все время
+          </Link>
+          <Link
+            href={exportHref}
+            className="rounded-full border border-emerald-200/80 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 transition hover:bg-emerald-100/70"
+          >
+            Excel
           </Link>
         </form>
       </div>

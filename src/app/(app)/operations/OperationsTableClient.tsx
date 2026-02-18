@@ -57,6 +57,25 @@ const typeLabels: Record<string, string> = {
   adjustment: 'Корректировка'
 }
 
+const quickFilterLabels: Record<QuickFilter, string> = {
+  all: 'Все',
+  with_promo: 'С промокодом',
+  without_promo: 'Без промокода',
+  with_delivery: 'С доставкой',
+  without_delivery: 'Без доставки'
+}
+
+const sortLabels: Record<SortKey, string> = {
+  occurred_desc: 'Дата: новые сверху',
+  occurred_asc: 'Дата: старые сверху',
+  delivery_desc: 'Доставка: по убыванию',
+  delivery_asc: 'Доставка: по возрастанию',
+  type_asc: 'Тип: А-Я',
+  type_desc: 'Тип: Я-А',
+  city_asc: 'Город: А-Я',
+  city_desc: 'Город: Я-А'
+}
+
 export default function OperationsTableClient({
   operations,
   locations,
@@ -68,6 +87,8 @@ export default function OperationsTableClient({
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('occurred_desc')
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const locationMap = useMemo(
     () => new Map(locations.map((item) => [item.id, item.name])),
@@ -162,9 +183,81 @@ export default function OperationsTableClient({
     dateFrom,
     dateTo,
     sortBy,
-    issueSet,
     locationMap
   ])
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    setExportError(null)
+
+    try {
+      const XLSX = await import('xlsx')
+      const workbook = XLSX.utils.book_new()
+
+      const reportRows = filteredOperations.map((operation) => {
+        const fromName = operation.from_location_id
+          ? locationMap.get(operation.from_location_id) ?? '—'
+          : '—'
+        const toName = operation.to_location_id
+          ? locationMap.get(operation.to_location_id) ?? '—'
+          : '—'
+
+        return {
+          Дата: new Date(operation.occurred_at).toLocaleString('ru-RU'),
+          Тип: typeLabels[operation.type] ?? operation.type,
+          Город: operation.city ?? '—',
+          Доставка: (operation.delivery_cost ?? 0) / 100,
+          Промокод: operation.promo_code_id ?? '—',
+          Маркировка: issueSet.has(operation.id) ? 'Проблема' : 'OK',
+          Маршрут: `${fromName} -> ${toName}`,
+          Комментарий: operation.note ?? ''
+        }
+      })
+
+      const operationsSheet = XLSX.utils.json_to_sheet(
+        reportRows.length
+          ? reportRows
+          : [{ Сообщение: 'По выбранным фильтрам операций не найдено' }]
+      )
+      XLSX.utils.book_append_sheet(workbook, operationsSheet, 'Операции')
+
+      const filtersSheet = XLSX.utils.json_to_sheet([
+        { Параметр: 'Сформировано', Значение: new Date().toLocaleString('ru-RU') },
+        { Параметр: 'Поиск', Значение: searchQuery.trim() || '—' },
+        {
+          Параметр: 'Тип операции',
+          Значение: typeFilter ? (typeLabels[typeFilter] ?? typeFilter) : 'Все'
+        },
+        { Параметр: 'Быстрый фильтр', Значение: quickFilterLabels[quickFilter] },
+        { Параметр: 'Дата с', Значение: dateFrom || '—' },
+        { Параметр: 'Дата по', Значение: dateTo || '—' },
+        { Параметр: 'Сортировка', Значение: sortLabels[sortBy] },
+        { Параметр: 'Строк в отчете', Значение: filteredOperations.length }
+      ])
+      XLSX.utils.book_append_sheet(workbook, filtersSheet, 'Фильтры')
+
+      const fileContent = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+      const blob = new Blob([fileContent], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const dateSuffix = new Date().toISOString().slice(0, 10)
+      const fromSuffix = dateFrom || 'start'
+      const toSuffix = dateTo || 'end'
+
+      link.href = downloadUrl
+      link.download = `operations_${quickFilter}_${typeFilter || 'all'}_${fromSuffix}_${toSuffix}_${dateSuffix}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Не удалось сформировать отчет')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -224,7 +317,21 @@ export default function OperationsTableClient({
           <option value="city_asc">Город: А-Я</option>
           <option value="city_desc">Город: Я-А</option>
         </select>
+        <button
+          type="button"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={handleExport}
+          disabled={isExporting}
+        >
+          {isExporting ? 'Экспорт...' : 'Excel'}
+        </button>
       </div>
+
+      {exportError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+          Ошибка экспорта: {exportError}
+        </div>
+      ) : null}
 
       <Table>
         <THead>

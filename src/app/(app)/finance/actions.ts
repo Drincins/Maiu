@@ -9,6 +9,8 @@ const normalizeOptionalId = (value?: string | null) => {
   return trimmed.length ? trimmed : null
 }
 
+const normalizeRequiredText = (value: string) => value.trim()
+
 async function resolveCounterpartyId(
   supabase: SupabaseClient,
   userId: string,
@@ -98,8 +100,9 @@ export async function createPaymentSource(values: {
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('payment_sources').insert({
@@ -116,8 +119,9 @@ export async function createPaymentSource(values: {
 export async function deletePaymentSource(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase
@@ -137,8 +141,9 @@ export async function createLegalEntity(values: {
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('legal_entities').insert({
@@ -158,8 +163,9 @@ export async function createExpenseCategory(values: {
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('expense_categories').insert({
@@ -175,8 +181,9 @@ export async function createExpenseCategory(values: {
 export async function deleteExpenseCategory(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase
@@ -197,8 +204,9 @@ export async function createPromoCode(values: {
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('promo_codes').insert({
@@ -216,8 +224,9 @@ export async function createPromoCode(values: {
 export async function deletePromoCode(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase
@@ -233,8 +242,9 @@ export async function deletePromoCode(id: string) {
 export async function cleanupReferenceData() {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const normalize = (value: string) => value.trim().toLowerCase()
@@ -317,14 +327,28 @@ export async function cleanupReferenceData() {
   )
   if (locationResult?.error) return locationResult
 
+  const { data: collections } = await supabase
+    .from('product_collections')
+    .select('id, name, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
+
+  const collectionResult = await deleteDuplicates(
+    collections ?? [],
+    (row) => normalize(row.name),
+    'product_collections'
+  )
+  if (collectionResult?.error) return collectionResult
+
   return { ok: true }
 }
 
 export async function createLocation(values: { name: string; type: string }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('locations').insert({
@@ -340,8 +364,9 @@ export async function createLocation(values: { name: string; type: string }) {
 export async function deleteLocation(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase
@@ -354,11 +379,77 @@ export async function deleteLocation(id: string) {
   return { ok: true }
 }
 
+export async function createProductCollection(values: { name: string }) {
+  const supabase = await createClient()
+  const {
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
+  if (!user) return { error: 'Not authenticated' }
+
+  const name = normalizeRequiredText(values.name)
+  if (!name) return { error: 'Collection name is required' }
+
+  const { error } = await supabase.from('product_collections').insert({
+    user_id: user.id,
+    name
+  })
+
+  if (error) return { error: error.message }
+  return { ok: true }
+}
+
+export async function updateProductCollection(
+  id: string,
+  values: { name: string }
+) {
+  const supabase = await createClient()
+  const {
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
+  if (!user) return { error: 'Not authenticated' }
+
+  const name = normalizeRequiredText(values.name)
+  if (!name) return { error: 'Collection name is required' }
+
+  const { data, error } = await supabase
+    .from('product_collections')
+    .update({ name })
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Collection not found' }
+  return { ok: true }
+}
+
+export async function deleteProductCollection(id: string) {
+  const supabase = await createClient()
+  const {
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('product_collections')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id)
+
+  if (error) return { error: error.message }
+  return { ok: true }
+}
+
 export async function createCounterparty(values: { name: string; type?: string }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('counterparties').insert({
@@ -374,8 +465,9 @@ export async function createCounterparty(values: { name: string; type?: string }
 export async function deleteCounterparty(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase
@@ -401,8 +493,9 @@ export async function createFinanceTransaction(values: {
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const paymentSourceResult = await resolvePaymentSourceId(
@@ -459,8 +552,9 @@ export async function updateFinanceTransaction(
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const paymentSourceResult = await resolvePaymentSourceId(
@@ -511,8 +605,9 @@ export async function updateFinanceTransaction(
 export async function deleteFinanceTransaction(transactionId: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   if (!user) return { error: 'Not authenticated' }
 
   const { data, error } = await supabase
@@ -528,4 +623,3 @@ export async function deleteFinanceTransaction(transactionId: string) {
 
   return { ok: true }
 }
-

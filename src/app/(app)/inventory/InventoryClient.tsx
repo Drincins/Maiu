@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition, type FormEvent } from 'react'
+import { Fragment, useEffect, useMemo, useState, useTransition, type FormEvent } from 'react'
 import { Card } from '@/components/Card'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/Button'
@@ -38,6 +38,20 @@ type InventoryClientProps = {
   locations: Location[]
 }
 
+type InventoryRow = StockRow & {
+  variant: Variant
+  location: Location
+}
+
+type InventoryGroup = {
+  model_id: string
+  model_name: string
+  total_qty: number
+  sku_count: number
+  location_count: number
+  rows: InventoryRow[]
+}
+
 type SortKey =
   | 'sku_asc'
   | 'sku_desc'
@@ -47,6 +61,8 @@ type SortKey =
   | 'location_desc'
   | 'qty_asc'
   | 'qty_desc'
+
+const STORAGE_LOCATION_TYPES = new Set(['sales', 'promo', 'other'])
 
 export default function InventoryClient({ stock, variants, locations }: InventoryClientProps) {
   const [selectedModelId, setSelectedModelId] = useState('')
@@ -63,6 +79,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('qty_desc')
   const [onlyActive, setOnlyActive] = useState(true)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const now = new Date()
@@ -114,18 +131,20 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
     [variants, selectedModelId]
   )
 
+  const storageLocations = useMemo(
+    () => locations.filter((location) => STORAGE_LOCATION_TYPES.has(location.type)),
+    [locations]
+  )
+
   const warehouseLocations = useMemo(() => {
-    const warehouseTypes = new Set(['sales', 'promo', 'other'])
     const map = new Map<string, Location>()
-    locations
-      .filter((location) => warehouseTypes.has(location.type))
-      .forEach((location) => {
-        if (!map.has(location.name)) {
-          map.set(location.name, location)
-        }
-      })
+    storageLocations.forEach((location) => {
+      if (!map.has(location.name)) {
+        map.set(location.name, location)
+      }
+    })
     return Array.from(map.values())
-  }, [locations])
+  }, [storageLocations])
 
   const canSelectItems = Boolean(selectedLocationId && occurredDate)
 
@@ -261,7 +280,12 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
           location
         }
       })
-      .filter((row) => row.variant && row.location)
+      .filter(
+        (
+          row
+        ): row is InventoryRow => Boolean(row.variant && row.location)
+      )
+      .filter((row) => STORAGE_LOCATION_TYPES.has(row.location.type))
       .filter((row) => {
         if (onlyActive && row.variant?.model?.is_active === false) return false
         if (size && row.variant?.size !== size) return false
@@ -321,6 +345,62 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
     searchQuery,
     sortBy
   ])
+
+  const groupedRows = useMemo<InventoryGroup[]>(() => {
+    const groups = new Map<
+      string,
+      {
+        model_id: string
+        model_name: string
+        total_qty: number
+        rows: InventoryRow[]
+        variant_ids: Set<string>
+        location_ids: Set<string>
+      }
+    >()
+
+    rows.forEach((row) => {
+      const modelId = row.variant.model_id
+      const existing = groups.get(modelId)
+      if (!existing) {
+        groups.set(modelId, {
+          model_id: modelId,
+          model_name: row.variant.model?.name ?? 'Без модели',
+          total_qty: row.qty,
+          rows: [row],
+          variant_ids: new Set([row.variant_id]),
+          location_ids: new Set([row.location_id])
+        })
+        return
+      }
+
+      existing.total_qty += row.qty
+      existing.rows.push(row)
+      existing.variant_ids.add(row.variant_id)
+      existing.location_ids.add(row.location_id)
+    })
+
+    return Array.from(groups.values()).map((group) => ({
+      model_id: group.model_id,
+      model_name: group.model_name,
+      total_qty: group.total_qty,
+      sku_count: group.variant_ids.size,
+      location_count: group.location_ids.size,
+      rows: group.rows
+    }))
+  }, [rows])
+
+  const allGroupsExpanded = groupedRows.length > 0 && groupedRows.every((group) => expandedGroups[group.model_id])
+
+  const handleExpandAll = () => {
+    setExpandedGroups(
+      Object.fromEntries(groupedRows.map((group) => [group.model_id, true]))
+    )
+  }
+
+  const handleCollapseAll = () => {
+    setExpandedGroups({})
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -618,7 +698,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             onChange={(event) => setLocationFilter(event.target.value)}
           >
             <option value="">Все</option>
-            {locations.map((location) => (
+            {storageLocations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
               </option>
@@ -666,11 +746,21 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
       </Card>
 
       <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <span>Сначала товар, внутри раскрытия его SKU</span>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={handleExpandAll} disabled={allGroupsExpanded}>
+              Раскрыть все
+            </Button>
+            <Button type="button" variant="ghost" onClick={handleCollapseAll} disabled={!groupedRows.length}>
+              Свернуть все
+            </Button>
+          </div>
+        </div>
         <Table>
           <THead>
             <TR>
-              <TH>SKU</TH>
-              <TH>Модель</TH>
+              <TH>Товар / SKU</TH>
               <TH>Размер</TH>
               <TH>Цвет</TH>
               <TH>Локация</TH>
@@ -678,20 +768,51 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             </TR>
           </THead>
           <TBody>
-            {rows.length ? (
-              rows.map((row) => (
-                <TR key={`${row.variant_id}-${row.location_id}`}>
-                  <TD className="font-medium text-slate-900">{row.variant?.sku}</TD>
-                  <TD>{row.variant?.model?.name ?? '—'}</TD>
-                  <TD>{row.variant?.size ?? '—'}</TD>
-                  <TD>{row.variant?.color ?? '—'}</TD>
-                  <TD>{row.location?.name ?? '—'}</TD>
-                  <TD className="font-semibold text-slate-900">{row.qty}</TD>
-                </TR>
-              ))
+            {groupedRows.length ? (
+              groupedRows.map((group) => {
+                const isExpanded = Boolean(expandedGroups[group.model_id])
+                return (
+                  <Fragment key={group.model_id}>
+                    <TR className="bg-slate-50/80 hover:bg-slate-100/80">
+                      <TD colSpan={5} className="px-2 py-2">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-xl px-2 py-1 text-left transition hover:bg-slate-100"
+                          onClick={() =>
+                            setExpandedGroups((prev) => ({
+                              ...prev,
+                              [group.model_id]: !prev[group.model_id]
+                            }))
+                          }
+                        >
+                          <span className="inline-flex items-center gap-2">
+                            <span className="text-xs text-slate-500">{isExpanded ? '▾' : '▸'}</span>
+                            <span className="font-semibold text-slate-900">{group.model_name}</span>
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {group.sku_count} SKU · {group.location_count} локац. · остаток {group.total_qty}
+                          </span>
+                        </button>
+                      </TD>
+                    </TR>
+
+                    {isExpanded
+                      ? group.rows.map((row) => (
+                          <TR key={`${group.model_id}-${row.variant_id}-${row.location_id}`}>
+                            <TD className="pl-10 font-medium text-slate-900">{row.variant.sku}</TD>
+                            <TD>{row.variant.size ?? '—'}</TD>
+                            <TD>{row.variant.color ?? '—'}</TD>
+                            <TD>{row.location.name}</TD>
+                            <TD className="font-semibold text-slate-900">{row.qty}</TD>
+                          </TR>
+                        ))
+                      : null}
+                  </Fragment>
+                )
+              })
             ) : (
               <TR>
-                <TD colSpan={6} className="text-center text-slate-500">
+                <TD colSpan={5} className="text-center text-slate-500">
                   Ничего не найдено по выбранным параметрам
                 </TD>
               </TR>

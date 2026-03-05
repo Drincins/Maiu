@@ -1,23 +1,22 @@
-﻿import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+﻿import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { ensureDefaults } from './actions'
+import { getSupabaseUserFromCookies } from '@/lib/supabase/session'
 
 export default async function AppLayout({
   children
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const {
-    data: { user }
-  } = await supabase.auth.getUser()
+  const cookieStore = await cookies()
+  const user = getSupabaseUserFromCookies(cookieStore)
 
-  if (!user) {
+  if (!user.id) {
     redirect('/login')
   }
 
-  const defaultsPromise = ensureDefaults().catch(() => {})
+  const defaultsPromise = ensureDefaults(user.id).catch(() => {})
   await Promise.race([
     defaultsPromise,
     new Promise<void>((resolve) => setTimeout(resolve, 1500))

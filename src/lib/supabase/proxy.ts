@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
+type CookieToSet = {
+  name: string
+  value: string
+  options?: CookieOptions
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -13,19 +19,28 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({ name, value, ...options })
-        },
-        remove(name: string, options: CookieOptions) {
-          response.cookies.set({ name, value: '', ...options })
+        setAll(cookiesToSet: CookieToSet[]) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+
+          response = NextResponse.next({
+            request: {
+              headers: request.headers
+            }
+          })
+
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
         }
       }
     }
   )
 
-  const { data } = await supabase.auth.getUser()
-  return { response, user: data.user }
+  // In middleware we avoid aggressive getUser() verification on every request
+  // to prevent Supabase Auth rate-limit spikes (429).
+  const { data } = await supabase.auth.getSession()
+  return { response, user: data.session?.user ?? null }
 }

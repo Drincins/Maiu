@@ -9,13 +9,16 @@ import { Card } from '@/components/Card'
 import { Field } from '@/components/Field'
 import {
   createExpenseCategory,
+  createProductCollection,
   createPaymentSource,
   createPromoCode,
   createLocation,
   deletePaymentSource,
+  deleteProductCollection,
   deleteExpenseCategory,
   deletePromoCode,
-  deleteLocation
+  deleteLocation,
+  updateProductCollection
 } from '../actions'
 
 const paymentSchema = z.object({
@@ -42,6 +45,10 @@ const salesSchema = z.object({
   name: z.enum(['Клиент', 'Блогер', 'Брак/Списание'])
 })
 
+const collectionSchema = z.object({
+  name: z.string().min(1)
+})
+
 type FinanceSettingsClientProps = {
   paymentSources: { id: string; name: string }[]
   categories: { id: string; name: string; kind: string }[]
@@ -53,16 +60,20 @@ type FinanceSettingsClientProps = {
     is_active: boolean
   }[]
   locations: { id: string; name: string; type: string; is_active?: boolean }[]
+  collections: { id: string; name: string }[]
 }
 
 export default function FinanceSettingsClient({
   paymentSources,
   categories,
   promoCodes,
-  locations
+  locations,
+  collections
 }: FinanceSettingsClientProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null)
+  const [editingCollectionName, setEditingCollectionName] = useState('')
 
   const paymentForm = useForm<z.infer<typeof paymentSchema>>({
     resolver: zodResolver(paymentSchema)
@@ -76,6 +87,9 @@ export default function FinanceSettingsClient({
   const promoForm = useForm<z.infer<typeof promoSchema>>({
     resolver: zodResolver(promoSchema),
     defaultValues: { discount_type: 'percent', discount_value: 0, is_active: true }
+  })
+  const collectionForm = useForm<z.infer<typeof collectionSchema>>({
+    resolver: zodResolver(collectionSchema)
   })
 
   const runAction = (action: () => Promise<{ error?: string }>) => {
@@ -114,6 +128,18 @@ export default function FinanceSettingsClient({
     }
     const type = typeMap[values.name] ?? 'sold'
     runAction(() => createLocation({ name: values.name, type }))
+  }
+
+  const submitCollection = (values: z.infer<typeof collectionSchema>) => {
+    runAction(() => createProductCollection(values))
+  }
+
+  const handleCollectionUpdate = (id: string) => {
+    runAction(() =>
+      updateProductCollection(id, {
+        name: editingCollectionName
+      })
+    )
   }
 
   const promoLabel = (promo: FinanceSettingsClientProps['promoCodes'][number]) => {
@@ -230,6 +256,80 @@ export default function FinanceSettingsClient({
             </select>
           </Field>
           <Button type="submit" disabled={isPending}>Добавить</Button>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900">Коллекции</h2>
+        <ul className="mt-3 space-y-2 text-sm text-slate-600">
+          {collections.map((item) => {
+            const isEditing = editingCollectionId === item.id
+            return (
+              <li key={item.id} className="flex items-center justify-between gap-2">
+                {isEditing ? (
+                  <input
+                    className="w-full max-w-[220px] rounded-xl border border-slate-200 px-3 py-1.5 text-sm"
+                    value={editingCollectionName}
+                    onChange={(event) => setEditingCollectionName(event.target.value)}
+                  />
+                ) : (
+                  <span>{item.name}</span>
+                )}
+                <div className="flex items-center gap-2">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-emerald-200 hover:text-emerald-700"
+                        onClick={() => handleCollectionUpdate(item.id)}
+                        disabled={isPending}
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-700"
+                        onClick={() => {
+                          setEditingCollectionId(null)
+                          setEditingCollectionName('')
+                        }}
+                        disabled={isPending}
+                      >
+                        Отмена
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-brand-200 hover:text-brand-700"
+                      onClick={() => {
+                        setEditingCollectionId(item.id)
+                        setEditingCollectionName(item.name)
+                      }}
+                      disabled={isPending}
+                    >
+                      Изменить
+                    </button>
+                  )}
+                  <IconButton onClick={() => runAction(() => deleteProductCollection(item.id))} />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+        <form
+          onSubmit={collectionForm.handleSubmit(submitCollection)}
+          className="mt-4 grid gap-3"
+        >
+          <Field label="Название">
+            <input
+              className="rounded-xl border border-slate-200 px-3 py-2"
+              {...collectionForm.register('name')}
+            />
+          </Field>
+          <Button type="submit" disabled={isPending}>
+            Добавить
+          </Button>
         </form>
       </Card>
 

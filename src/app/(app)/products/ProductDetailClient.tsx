@@ -19,7 +19,8 @@ const modelSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   main_image_url: z.string().optional(),
-  is_active: z.boolean().optional()
+  is_active: z.boolean().optional(),
+  collection_id: z.string().optional().nullable()
 })
 
 type ModelFormValues = z.infer<typeof modelSchema>
@@ -30,6 +31,7 @@ type Model = {
   description: string | null
   main_image_url: string | null
   is_active: boolean
+  collection_id: string | null
 }
 
 type Variant = {
@@ -47,6 +49,16 @@ type Variant = {
 type ProductDetailClientProps = {
   model: Model
   variants: Variant[]
+  collections: { id: string; name: string }[]
+  techCard: {
+    id: string
+    name: string
+    color: string | null
+    sizes: string[]
+    total_cost: number
+    line_count: number
+    updated_at: string | null
+  }
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -96,7 +108,9 @@ const dateInputToIso = (value: string) => {
 
 export default function ProductDetailClient({
   model,
-  variants
+  variants,
+  collections,
+  techCard
 }: ProductDetailClientProps) {
   const router = useRouter()
   const [modelError, setModelError] = useState<string | null>(null)
@@ -135,7 +149,8 @@ export default function ProductDetailClient({
       name: model.name,
       description: model.description ?? '',
       main_image_url: model.main_image_url ?? '',
-      is_active: model.is_active
+      is_active: model.is_active,
+      collection_id: model.collection_id ?? ''
     }
   })
 
@@ -160,7 +175,8 @@ export default function ProductDetailClient({
     startModelTransition(async () => {
       const result = await updateModel(model.id, {
         ...values,
-        main_image_url: values.main_image_url || null
+        main_image_url: values.main_image_url || null,
+        collection_id: values.collection_id || null
       })
       if (result?.error) {
         setModelError(result.error)
@@ -315,11 +331,6 @@ export default function ProductDetailClient({
                 {model.is_active ? 'Активно' : 'Архив'}
               </Badge>
             </div>
-            <Link href={`/products/${model.id}/tech-card`}>
-              <Button type="button" variant="secondary">
-                Техкарта
-              </Button>
-            </Link>
           </div>
           <Field label="Название" error={modelForm.formState.errors.name?.message}>
             <input
@@ -333,6 +344,19 @@ export default function ProductDetailClient({
               className="min-h-[90px] rounded-xl border border-slate-200 px-3 py-2"
               {...modelForm.register('description')}
             />
+          </Field>
+          <Field label="Коллекция">
+            <select
+              className="rounded-xl border border-slate-200 px-3 py-2"
+              {...modelForm.register('collection_id')}
+            >
+              <option value="">Без коллекции</option>
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Фото модели">
             <StorageUploader
@@ -372,6 +396,46 @@ export default function ProductDetailClient({
             </button>
           </div>
         </form>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Техкарта</h2>
+            <p className="text-sm text-slate-500">{techCard.name}</p>
+          </div>
+          <Link href={`/products/${model.id}/tech-card`}>
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-brand-200 hover:text-brand-700"
+              title="Редактировать техкарту"
+              aria-label="Редактировать техкарту"
+            >
+              <PencilIcon className="h-4 w-4" />
+            </button>
+          </Link>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Итого</p>
+            <p className="text-sm font-semibold text-slate-900">{formatMoney(techCard.total_cost)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Строк в техкарте</p>
+            <p className="text-sm font-semibold text-slate-900">{techCard.line_count}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Размеры</p>
+            <p className="text-sm font-semibold text-slate-900">
+              {techCard.sizes.length ? techCard.sizes.join(', ') : '—'}
+            </p>
+          </div>
+        </div>
+        {techCard.updated_at ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Обновлено: {new Date(techCard.updated_at).toLocaleString('ru-RU')}
+          </p>
+        ) : null}
       </Card>
 
       <Card>

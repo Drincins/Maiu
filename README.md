@@ -33,6 +33,35 @@ npm run dev
    - `product-images` (public)
    - `finance-attachments` (public для MVP или private + signed URLs)
 
+## Импорт расходов из Excel
+
+Есть CLI-скрипт для массовой загрузки расходов напрямую в `finance_transactions`.
+
+1. Подготовьте `.xlsx` (первая строка = заголовки).
+2. Обязательные колонки:
+   - `date` / `дата`
+   - `amount` / `сумма`
+3. Опциональные колонки:
+   - `category` / `категория`
+   - `payment_source` / `источник оплаты`
+   - `legal_entity` / `юрлицо`
+   - `counterparty` / `контрагент`
+   - `note` / `комментарий`
+   - `type` (если указан, должен быть `expense`)
+
+Пример запуска:
+
+```bash
+npm run import:expenses -- --file ./tmp/expenses.xlsx --user <USER_UUID>
+```
+
+Требуется `SUPABASE_SERVICE_ROLE_KEY` в `.env.local` (для прямой записи в БД).
+
+Режимы:
+- По умолчанию `dry-run` (только проверка и предпросмотр).
+- Для реальной загрузки добавьте `--commit`.
+- Для автосоздания отсутствующих справочников добавьте `--autocreate`.
+
 ## Переменные окружения
 
 См. `.env.example`:

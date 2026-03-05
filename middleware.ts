@@ -1,26 +1,34 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 
 const PUBLIC_PATHS = ['/login', '/auth']
-const SESSION_TIMEOUT_MS = 3000
+const AUTH_COOKIE_RE = /-auth-token(?:\.\d+)?$/
 
-const fallbackResponse = (request: NextRequest) =>
-  NextResponse.next({
-    request: {
-      headers: request.headers
-    }
+const hasSupabaseAuthCookie = (request: NextRequest) =>
+  request.cookies
+    .getAll()
+    .some((cookie) => AUTH_COOKIE_RE.test(cookie.name))
+
+const clearSupabaseAuthCookies = (request: NextRequest, response: NextResponse) => {
+  request.cookies.getAll().forEach((cookie) => {
+    if (!AUTH_COOKIE_RE.test(cookie.name)) return
+
+    response.cookies.set({
+      name: cookie.name,
+      value: '',
+      path: '/',
+      maxAge: 0
+    })
   })
+}
 
-const withTimeout = async (request: NextRequest) => {
-  const timeout = new Promise<{ response: NextResponse; user: null }>((resolve) => {
-    setTimeout(() => resolve({ response: fallbackResponse(request), user: null }), SESSION_TIMEOUT_MS)
-  })
-
-  try {
-    return await Promise.race([updateSession(request), timeout])
-  } catch {
-    return { response: fallbackResponse(request), user: null }
-  }
+const redirectToLogin = (request: NextRequest, pathname: string) => {
+  const redirectUrl = request.nextUrl.clone()
+  redirectUrl.pathname = '/login'
+  redirectUrl.searchParams.set('redirectedFrom', pathname)
+  const response = NextResponse.redirect(redirectUrl)
+  clearSupabaseAuthCookies(request, response)
+  return response
 }
 
 export async function middleware(request: NextRequest) {
@@ -31,16 +39,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const { response, user } = await withTimeout(request)
-
-  if (!user) {
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/login'
-    redirectUrl.searchParams.set('redirectedFrom', pathname)
-    return NextResponse.redirect(redirectUrl)
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return NextResponse.next()
   }
 
-  return response
+  const authCookieExists = hasSupabaseAuthCookie(request)
+  if (!authCookieExists) {
+    return redirectToLogin(request, pathname)
+  }
+
+  try {
+    const { response, user } = await updateSession(request)
+    if (!user) {
+      return redirectToLogin(request, pathname)
+    }
+    return response
+  } catch {
+    return redirectToLogin(request, pathname)
+  }
 }
 
 export const config = {

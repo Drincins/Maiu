@@ -10,7 +10,7 @@ export default async function InventoryPage() {
       supabase
         .from('product_variants')
         .select('id, sku, size, color, is_marked, model_id, model:product_models(name, is_active)'),
-      supabase.from('locations').select('id, name, type')
+      supabase.from('locations').select('id, name, type').in('type', ['sales', 'promo', 'other'])
     ])
 
   return (
@@ -27,4 +27,3 @@ export default async function InventoryPage() {
     </div>
   )
 }
-

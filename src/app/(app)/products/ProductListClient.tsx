@@ -17,11 +17,14 @@ type ModelRow = {
   name: string
   is_active: boolean
   main_image_url?: string | null
+  collection_id?: string | null
+  collection?: { id: string; name: string } | null
   product_variants: Variant[] | null
 }
 
 type ProductListClientProps = {
   models: ModelRow[]
+  collections: { id: string; name: string }[]
 }
 
 const sizeOrder = ['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -71,12 +74,16 @@ const TrashIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-export default function ProductListClient({ models }: ProductListClientProps) {
+export default function ProductListClient({
+  models,
+  collections
+}: ProductListClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sizeFilter, setSizeFilter] = useState('')
+  const [collectionFilter, setCollectionFilter] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('name_asc')
 
   const handleArchive = (modelId: string) => {
@@ -115,6 +122,7 @@ export default function ProductListClient({ models }: ProductListClientProps) {
 
       return {
         ...model,
+        collectionName: model.collection?.name ?? null,
         sizes,
         prices,
         costs,
@@ -133,11 +141,20 @@ export default function ProductListClient({ models }: ProductListClientProps) {
   const filteredModels = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const filtered = modelRows.filter((model) => {
+      if (collectionFilter === '__none__' && model.collection_id) return false
+      if (
+        collectionFilter &&
+        collectionFilter !== '__none__' &&
+        model.collection_id !== collectionFilter
+      ) {
+        return false
+      }
       if (sizeFilter && !model.sizes.includes(sizeFilter)) return false
       if (!query) return true
 
       const haystack = [
         model.name,
+        model.collectionName ?? '',
         model.sizes.join(' '),
         model.prices.map((value) => String(value)).join(' '),
         model.costs.map((value) => String(value)).join(' ')
@@ -170,14 +187,14 @@ export default function ProductListClient({ models }: ProductListClientProps) {
           return a.name.localeCompare(b.name, 'ru')
       }
     })
-  }, [modelRows, searchQuery, sizeFilter, sortBy])
+  }, [modelRows, searchQuery, sizeFilter, collectionFilter, sortBy])
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <input
           className="rounded-xl border border-slate-200 px-3 py-2"
-          placeholder="Поиск по названию, размеру, цене"
+          placeholder="Поиск по названию, коллекции, размеру, цене"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
         />
@@ -192,6 +209,19 @@ export default function ProductListClient({ models }: ProductListClientProps) {
               {size}
             </option>
           ))}
+        </select>
+        <select
+          className="rounded-xl border border-slate-200 px-3 py-2"
+          value={collectionFilter}
+          onChange={(event) => setCollectionFilter(event.target.value)}
+        >
+          <option value="">Все коллекции</option>
+          {collections.map((collection) => (
+            <option key={collection.id} value={collection.id}>
+              {collection.name}
+            </option>
+          ))}
+          <option value="__none__">Без коллекции</option>
         </select>
         <select
           className="rounded-xl border border-slate-200 px-3 py-2"
@@ -212,6 +242,7 @@ export default function ProductListClient({ models }: ProductListClientProps) {
           <TR>
             <TH>Фото</TH>
             <TH>Название</TH>
+            <TH>Коллекция</TH>
             <TH>Размеры</TH>
             <TH>Стоимость</TH>
             <TH>Себестоимость</TH>
@@ -238,6 +269,7 @@ export default function ProductListClient({ models }: ProductListClientProps) {
                   )}
                 </TD>
                 <TD className="font-medium text-slate-900">{model.name}</TD>
+                <TD>{model.collectionName ?? '—'}</TD>
                 <TD>{model.sizes.length ? model.sizes.join(', ') : '—'}</TD>
                 <TD>{formatRange(model.prices)}</TD>
                 <TD>{formatRange(model.costs)}</TD>
@@ -259,7 +291,7 @@ export default function ProductListClient({ models }: ProductListClientProps) {
             ))
           ) : (
             <TR>
-              <TD colSpan={6} className="text-center text-slate-500">
+              <TD colSpan={7} className="text-center text-slate-500">
                 Ничего не найдено по выбранным параметрам
               </TD>
             </TR>

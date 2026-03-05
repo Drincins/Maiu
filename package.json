@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "import:expenses": "node scripts/import_expenses_from_excel.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",

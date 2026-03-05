@@ -2,6 +2,17 @@
 
 import { createClient } from '@/lib/supabase/server'
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+type TechCardLinePayload = {
+  name?: string | null
+  article?: string | null
+  composition?: string | null
+  purchase_place?: string | null
+  usage?: number | null
+  unit_price?: number | null
+}
+
 const normalizeSkuPart = (value: string) =>
   value
     .trim()
@@ -37,6 +48,48 @@ const getRecalculationCounts = (payload: unknown) => {
   }
 }
 
+const normalizeOptionalId = (value?: string | null) => {
+  const normalized = (value ?? '').trim()
+  return normalized.length ? normalized : null
+}
+
+const resolveCollectionId = async (
+  supabase: SupabaseClient,
+  userId: string,
+  collectionId?: string | null
+) => {
+  const normalizedCollectionId = normalizeOptionalId(collectionId)
+  if (!normalizedCollectionId) {
+    return { id: null as string | null }
+  }
+
+  const { data, error } = await supabase
+    .from('product_collections')
+    .select('id')
+    .eq('id', normalizedCollectionId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Collection not found' }
+
+  return { id: data.id }
+}
+
+const computeTechCardTotal = (lines: TechCardLinePayload[]) =>
+  lines.reduce((sum, line) => {
+    const usage = typeof line.usage === 'number' && Number.isFinite(line.usage)
+      ? line.usage
+      : null
+    const unitPrice =
+      typeof line.unit_price === 'number' && Number.isFinite(line.unit_price)
+        ? line.unit_price
+        : null
+
+    if (usage === null || unitPrice === null) return sum
+    return sum + Math.round(usage * unitPrice)
+  }, 0)
+
 export async function createModel(values: {
   name: string
   unit_price: number
@@ -44,14 +97,25 @@ export async function createModel(values: {
   color: string
   sizes: string[]
   main_image_url?: string | null
+  collection_id?: string | null
 }) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
+  }
+
+  const collectionResult = await resolveCollectionId(
+    supabase,
+    user.id,
+    values.collection_id
+  )
+  if (collectionResult.error) {
+    return { error: collectionResult.error }
   }
 
   const { data, error } = await supabase
@@ -59,6 +123,7 @@ export async function createModel(values: {
     .insert({
       user_id: user.id,
       name: values.name,
+      collection_id: collectionResult.id,
       brand: null,
       category: null,
       description: null,
@@ -108,15 +173,26 @@ export async function updateModel(
     description?: string | null
     main_image_url?: string | null
     is_active?: boolean
+    collection_id?: string | null
   }
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
+  }
+
+  const collectionResult = await resolveCollectionId(
+    supabase,
+    user.id,
+    values.collection_id
+  )
+  if (collectionResult.error) {
+    return { error: collectionResult.error }
   }
 
   const { data, error } = await supabase
@@ -125,7 +201,8 @@ export async function updateModel(
       name: values.name,
       description: values.description ?? null,
       main_image_url: values.main_image_url ?? null,
-      is_active: values.is_active ?? true
+      is_active: values.is_active ?? true,
+      collection_id: collectionResult.id
     })
     .eq('user_id', user.id)
     .eq('id', id)
@@ -146,8 +223,9 @@ export async function updateModel(
 export async function deleteModel(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -175,8 +253,9 @@ export async function deleteModel(id: string) {
 export async function archiveModel(id: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -202,8 +281,9 @@ export async function updateVariantPrice(
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -245,8 +325,9 @@ export async function updateVariantDetails(
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -305,8 +386,9 @@ export async function bulkUpdateVariantPrices(
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -378,8 +460,9 @@ export async function createVariant(
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -416,20 +499,14 @@ export async function upsertTechCard(
     name?: string | null
     color?: string | null
     sizes?: string[] | null
-    lines?: Array<{
-      name?: string | null
-      article?: string | null
-      composition?: string | null
-      purchase_place?: string | null
-      usage?: number | null
-      unit_price?: number | null
-    }> | null
+    lines?: TechCardLinePayload[] | null
   }
 ) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }
@@ -451,6 +528,9 @@ export async function upsertTechCard(
     return trimmed.length ? trimmed : null
   }
 
+  const normalizedLines = values.lines ?? []
+  const totalCost = computeTechCardTotal(normalizedLines)
+
   const payload = {
     user_id: user.id,
     model_id: modelId,
@@ -458,7 +538,8 @@ export async function upsertTechCard(
     name: normalizeText(values.name),
     color: normalizeText(values.color),
     sizes: values.sizes ?? null,
-    lines: values.lines ?? []
+    lines: normalizedLines,
+    total_cost: totalCost
   }
 
   const { data, error } = await supabase
@@ -471,14 +552,25 @@ export async function upsertTechCard(
     return { error: error.message }
   }
 
-  return { id: data.id }
+  const { error: variantsError } = await supabase
+    .from('product_variants')
+    .update({ unit_cost: totalCost })
+    .eq('model_id', modelId)
+    .eq('user_id', user.id)
+
+  if (variantsError) {
+    return { error: variantsError.message }
+  }
+
+  return { id: data.id, totalCost }
 }
 
 export async function deleteTechCard(modelId: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }

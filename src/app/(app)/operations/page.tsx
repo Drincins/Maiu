@@ -6,8 +6,6 @@ import OperationsTableClient from './OperationsTableClient'
 
 export default async function OperationsPage() {
   const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
 
   const { data: operations, error: operationsError } = await supabase
     .from('operations')
@@ -81,7 +79,6 @@ export default async function OperationsPage() {
         {isEmpty ? (
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <div>Операций не найдено.</div>
-            <div>Пользователь: {user?.id ?? 'нет сессии'}</div>
             <div>
               Кол-во операций: {operationsCount ?? '—'}
               {operationsCountError ? ` (ошибка: ${operationsCountError.message})` : ''}

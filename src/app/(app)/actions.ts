@@ -9,13 +9,18 @@ export async function signOut() {
   redirect('/login')
 }
 
-export async function ensureDefaults() {
+export async function ensureDefaults(userId?: string) {
   const supabase = await createClient()
-  const {
-    data: { user }
-  } = await supabase.auth.getUser()
+  let resolvedUserId = userId
 
-  if (!user) return
+  if (!resolvedUserId) {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession()
+    resolvedUserId = session?.user?.id
+  }
+
+  if (!resolvedUserId) return
 
   const { data: existingLocations } = await supabase
     .from('locations')
@@ -36,7 +41,7 @@ export async function ensureDefaults() {
   if (missingLocations.length) {
     await supabase.from('locations').insert(
       missingLocations.map((location) => ({
-        user_id: user.id,
+        user_id: resolvedUserId,
         ...location
       }))
     )
@@ -62,7 +67,7 @@ export async function ensureDefaults() {
   if (missingPayments.length) {
     await supabase.from('payment_sources').insert(
       missingPayments.map((item) => ({
-        user_id: user.id,
+        user_id: resolvedUserId,
         ...item
       }))
     )
@@ -74,12 +79,12 @@ export async function ensureDefaults() {
 
   if (!categoryCount) {
     await supabase.from('expense_categories').insert([
-      { user_id: user.id, name: 'Закуп товара', kind: 'expense' },
-      { user_id: user.id, name: 'Доставка', kind: 'expense' },
-      { user_id: user.id, name: 'Упаковка', kind: 'expense' },
-      { user_id: user.id, name: 'Реклама', kind: 'expense' },
-      { user_id: user.id, name: 'Прочее', kind: 'expense' },
-      { user_id: user.id, name: 'Продажи', kind: 'income' }
+      { user_id: resolvedUserId, name: 'Закуп товара', kind: 'expense' },
+      { user_id: resolvedUserId, name: 'Доставка', kind: 'expense' },
+      { user_id: resolvedUserId, name: 'Упаковка', kind: 'expense' },
+      { user_id: resolvedUserId, name: 'Реклама', kind: 'expense' },
+      { user_id: resolvedUserId, name: 'Прочее', kind: 'expense' },
+      { user_id: resolvedUserId, name: 'Продажи', kind: 'income' }
     ])
   }
 }

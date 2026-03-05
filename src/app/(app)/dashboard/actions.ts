@@ -6,8 +6,9 @@ import { normalizeDashboardSettings, type DashboardSettings } from './settings'
 export async function saveDashboardSettings(values: Partial<DashboardSettings>) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) return { error: 'Not authenticated' }
 

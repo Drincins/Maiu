@@ -17,6 +17,7 @@ export default async function FinanceSettingsPage() {
     { data: categories },
     { data: promoCodes },
     { data: locations },
+    { data: collections },
     { data: rawDashboardSettings, error: dashboardSettingsError }
   ] = await Promise.all([
     supabase.from('payment_sources').select('id, name').order('created_at'),
@@ -26,6 +27,7 @@ export default async function FinanceSettingsPage() {
       .select('id, code, discount_type, discount_value, is_active')
       .order('created_at'),
     supabase.from('locations').select('id, name, type, is_active').order('created_at'),
+    supabase.from('product_collections').select('id, name').order('name'),
     supabase
       .from('dashboard_settings')
       .select(DASHBOARD_SETTINGS_SELECT)
@@ -50,6 +52,7 @@ export default async function FinanceSettingsPage() {
         categories={categories ?? []}
         promoCodes={promoCodes ?? []}
         locations={locations ?? []}
+        collections={collections ?? []}
       />
     </div>
   )

@@ -42,10 +42,20 @@ end;
 $$ language plpgsql;
 
 -- Tables
+create table if not exists public.product_collections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
 create table if not exists public.product_models (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   name text not null,
+  collection_id uuid references public.product_collections(id) on delete set null,
   brand text,
   category text,
   description text,
@@ -91,10 +101,17 @@ create table if not exists public.product_tech_cards (
   color text,
   sizes text[],
   lines jsonb not null default '[]'::jsonb,
+  total_cost integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (model_id)
 );
+
+alter table public.product_models
+  add column if not exists collection_id uuid references public.product_collections(id) on delete set null;
+
+alter table public.product_tech_cards
+  add column if not exists total_cost integer not null default 0;
 
 create table if not exists public.counterparties (
   id uuid primary key default gen_random_uuid(),
@@ -245,8 +262,8 @@ create table if not exists public.dashboard_settings (
   include_sale_returns boolean not null default true,
   include_sales_delivery boolean not null default true,
   include_sales_discounts boolean not null default true,
-  include_sales_cogs boolean not null default true,
-  include_sales_return_cost_recovery boolean not null default true,
+  include_sales_cogs boolean not null default false,
+  include_sales_return_cost_recovery boolean not null default false,
   include_blogger_ship_cost boolean not null default true,
   include_blogger_delivery boolean not null default true,
   include_blogger_return_recovery boolean not null default true,
@@ -254,9 +271,31 @@ create table if not exists public.dashboard_settings (
   updated_at timestamptz not null default now()
 );
 
+alter table public.dashboard_settings
+  alter column include_sales_cogs set default false;
+
+alter table public.dashboard_settings
+  alter column include_sales_return_cost_recovery set default false;
+
+-- Backfill existing users to the new default behavior:
+-- sales COGS is analytics by default (not a management minus).
+-- Applies only to untouched settings rows to avoid overriding explicit custom choices.
+update public.dashboard_settings
+set
+  include_sales_cogs = false,
+  include_sales_return_cost_recovery = false
+where
+  include_sales_cogs = true
+  and include_sales_return_cost_recovery = true
+  and updated_at = created_at;
+
 -- Triggers
 drop trigger if exists trg_product_models_updated_at on public.product_models;
 create trigger trg_product_models_updated_at before update on public.product_models
+for each row execute procedure set_updated_at();
+
+drop trigger if exists trg_product_collections_updated_at on public.product_collections;
+create trigger trg_product_collections_updated_at before update on public.product_collections
 for each row execute procedure set_updated_at();
 
 drop trigger if exists trg_product_variants_updated_at on public.product_variants;
@@ -277,6 +316,8 @@ for each row execute procedure set_updated_at();
 
 -- Indexes
 create index if not exists idx_product_models_user on public.product_models(user_id);
+create index if not exists idx_product_models_collection on public.product_models(collection_id);
+create index if not exists idx_product_collections_user on public.product_collections(user_id);
 create index if not exists idx_product_variants_user on public.product_variants(user_id);
 create index if not exists idx_price_history_user_variant_effective
   on public.product_variant_price_history(user_id, variant_id, effective_at desc);
@@ -287,6 +328,7 @@ create index if not exists idx_stock_movements_user_occurred on public.stock_mov
 create index if not exists idx_mark_codes_user on public.mark_codes(user_id);
 
 -- RLS enable
+alter table public.product_collections enable row level security;
 alter table public.product_models enable row level security;
 alter table public.product_variants enable row level security;
 alter table public.product_variant_price_history enable row level security;
@@ -311,7 +353,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'product_models','product_variants','product_variant_price_history','product_tech_cards','counterparties','locations','promo_codes',
+    'product_collections','product_models','product_variants','product_variant_price_history','product_tech_cards','counterparties','locations','promo_codes',
     'operations','stock_movements','mark_codes','legal_entities','payment_sources',
     'expense_categories','finance_transactions','dashboard_settings'
   ]

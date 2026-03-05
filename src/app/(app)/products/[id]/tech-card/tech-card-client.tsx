@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -129,6 +130,9 @@ export default function TechCardClient({
   const [techCardId, setTechCardId] = useState<string | null>(initial?.id ?? null)
   const [isPending, startTransition] = useTransition()
   const [deletePending, startDeleteTransition] = useTransition()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const shouldReturnToProduct = searchParams.get('returnToProduct') === '1'
 
   const sizeOptions = useMemo(() => {
     const sizes = variants
@@ -243,6 +247,9 @@ export default function TechCardClient({
         setTechCardId(result.id)
       }
       setSaved(true)
+      if (shouldReturnToProduct) {
+        router.replace(`/products/${model.id}`)
+      }
     })
   }
 
@@ -438,6 +445,18 @@ export default function TechCardClient({
             })}
           </TBody>
         </Table>
+        <div className="mt-4 flex justify-end">
+          <div className="w-full max-w-xs">
+            <Field label="Итого">
+              <input
+                readOnly
+                value={intToMoneyInput(totalCost)}
+                className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 font-semibold text-slate-900"
+              />
+            </Field>
+            <p className="mt-1 text-right text-xs text-slate-500">{formatMoney(totalCost)}</p>
+          </div>
+        </div>
       </Card>
     </div>
   )

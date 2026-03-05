@@ -39,8 +39,8 @@ export const DASHBOARD_SETTINGS_DEFAULTS: DashboardSettings = {
   include_sale_returns: true,
   include_sales_delivery: true,
   include_sales_discounts: true,
-  include_sales_cogs: true,
-  include_sales_return_cost_recovery: true,
+  include_sales_cogs: false,
+  include_sales_return_cost_recovery: false,
   include_blogger_ship_cost: true,
   include_blogger_delivery: true,
   include_blogger_return_recovery: true

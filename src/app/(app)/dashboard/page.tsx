@@ -185,6 +185,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     (sum, row) => sum + row.cost_value,
     0
   )
+  const salesNetCogs = salesCostOnly - salesReturnCostRecovery
+  const salesCogsAffectsManagement = dashboardSettings.include_sales_cogs
+  const salesReturnRecoveryAffectsManagement =
+    dashboardSettings.include_sales_cogs &&
+    dashboardSettings.include_sales_return_cost_recovery
   const salesDeliveryExpense = salesRows.reduce((sum, row) => sum + row.delivery_value, 0)
 
   const salesRevenue = salesRows.reduce((sum, row) => sum + row.revenue, 0)
@@ -282,7 +287,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       id: 'sales_return_cost',
       label: 'Возврат себестоимости (возвраты продаж)',
       amount: salesReturnCostRecovery,
-      enabled: dashboardSettings.include_sales_return_cost_recovery
+      enabled: salesReturnRecoveryAffectsManagement
     },
     {
       id: 'blogger_return_cost',
@@ -510,6 +515,45 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
             <div className="text-xl font-semibold text-rose-700">
               {formatMoney(managementMinusTotal)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700">
+              Себестоимость продаж (аналитика)
+            </div>
+            <div className="text-[11px] text-sky-700">
+              {salesCogsAffectsManagement
+                ? 'Сейчас учитывается в «Минусах»'
+                : 'Сейчас не влияет на управленческий итог'}
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Себестоимость проданного
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
+                {formatMoney(salesCostOnly)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Восстановление по возвратам
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
+                {formatMoney(salesReturnCostRecovery)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Чистая себестоимость
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
+                {formatMoney(salesNetCogs)}
+              </div>
             </div>
           </div>
         </div>

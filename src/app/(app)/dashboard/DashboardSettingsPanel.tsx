@@ -40,16 +40,16 @@ const settingLabels: Record<DashboardBooleanSettingKey, { label: string; hint: s
     hint: 'Скидки и промокоды'
   },
   include_sales_cogs: {
-    label: 'Себестоимость проданного',
-    hint: 'Себестоимость по операциям продажи'
+    label: 'Себестоимость продаж в минусах',
+    hint: 'Включайте только если хотите считать COGS как расход в управленческом итоге'
   },
   include_sales_return_cost_recovery: {
     label: 'Возврат себестоимости (продажи)',
-    hint: 'Что вернулось на склад по возвратам'
+    hint: 'Компенсация COGS по возвратам продаж (работает вместе с пунктом выше)'
   },
   include_blogger_ship_cost: {
     label: 'Себестоимость отправок блогерам',
-    hint: 'Операции ship_blogger'
+    hint: 'Учитывать ship_blogger как расход (потеря себестоимости)'
   },
   include_blogger_delivery: {
     label: 'Доставка блогерам',
@@ -73,15 +73,36 @@ const expenseKeys: DashboardBooleanSettingKey[] = DASHBOARD_BOOLEAN_SETTING_KEYS
 )
 
 export default function DashboardSettingsPanel({ initialSettings }: DashboardSettingsPanelProps) {
-  const [settings, setSettings] = useState(initialSettings)
+  const [settings, setSettings] = useState(() => ({
+    ...initialSettings,
+    include_sales_return_cost_recovery:
+      initialSettings.include_sales_cogs && initialSettings.include_sales_return_cost_recovery
+  }))
   const [serverError, setServerError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const toggleSetting = (key: DashboardBooleanSettingKey) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: !prev[key]
-    }))
+    setSettings((prev) => {
+      if (key === 'include_sales_return_cost_recovery' && !prev.include_sales_cogs) {
+        return prev
+      }
+
+      if (key === 'include_sales_cogs') {
+        const nextIncludeSalesCogs = !prev.include_sales_cogs
+        return {
+          ...prev,
+          include_sales_cogs: nextIncludeSalesCogs,
+          include_sales_return_cost_recovery: nextIncludeSalesCogs
+            ? prev.include_sales_return_cost_recovery
+            : false
+        }
+      }
+
+      return {
+        ...prev,
+        [key]: !prev[key]
+      }
+    })
   }
 
   const save = () => {
@@ -96,22 +117,32 @@ export default function DashboardSettingsPanel({ initialSettings }: DashboardSet
     })
   }
 
-  const SettingItem = ({ settingKey }: { settingKey: DashboardBooleanSettingKey }) => (
+  const SettingItem = ({ settingKey }: { settingKey: DashboardBooleanSettingKey }) => {
+    const isSalesReturnRecoveryDisabled =
+      settingKey === 'include_sales_return_cost_recovery' && !settings.include_sales_cogs
+
+    return (
     <label
-      className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2"
+      className={`flex items-start gap-3 rounded-xl border border-slate-200/80 px-3 py-2 ${
+        isSalesReturnRecoveryDisabled ? 'bg-slate-50 text-slate-400' : 'bg-white/70'
+      }`}
     >
       <input
         type="checkbox"
         className="mt-1 h-4 w-4 accent-brand-700"
         checked={settings[settingKey]}
+        disabled={isSalesReturnRecoveryDisabled}
         onChange={() => toggleSetting(settingKey)}
       />
       <span className="text-sm">
-        <span className="block font-medium text-slate-800">{settingLabels[settingKey].label}</span>
+        <span className={`block font-medium ${isSalesReturnRecoveryDisabled ? 'text-slate-500' : 'text-slate-800'}`}>
+          {settingLabels[settingKey].label}
+        </span>
         <span className="block text-xs text-slate-500">{settingLabels[settingKey].hint}</span>
       </span>
     </label>
-  )
+    )
+  }
 
   return (
     <Card>
@@ -172,6 +203,10 @@ export default function DashboardSettingsPanel({ initialSettings }: DashboardSet
           Режим "Продажи из Финансов": выручка по операциям продажи не добавляется отдельно, чтобы не задваивать отчет.
         </div>
       ) : null}
+
+      <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+        Рекомендуемый режим: себестоимость продаж не включать в «Минусы», а учитывать отдельно как аналитический показатель.
+      </div>
 
       {serverError ? (
         <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">

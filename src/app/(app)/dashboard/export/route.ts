@@ -85,8 +85,9 @@ const calculateDiscount = (revenue: number, type?: string | null, value?: number
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -220,6 +221,10 @@ export async function GET(request: NextRequest) {
     (sum, row) => sum + row.cost_value,
     0
   )
+  const salesNetCogs = salesCostOnly - salesReturnCostRecovery
+  const salesReturnRecoveryAffectsManagement =
+    dashboardSettings.include_sales_cogs &&
+    dashboardSettings.include_sales_return_cost_recovery
   const salesDeliveryExpense = salesRows.reduce((sum, row) => sum + row.delivery_value, 0)
   const shipCost = shipRows.reduce((sum, row) => sum + row.cost, 0)
   const shipDelivery = shipRows.reduce((sum, row) => sum + row.delivery, 0)
@@ -255,7 +260,7 @@ export async function GET(request: NextRequest) {
     {
       component: 'Возврат себестоимости (возвраты продаж)',
       amount: salesReturnCostRecovery,
-      enabled: dashboardSettings.include_sales_return_cost_recovery
+      enabled: salesReturnRecoveryAffectsManagement
     },
     {
       component: 'Возвраты от блогеров (себестоимость)',
@@ -313,6 +318,16 @@ export async function GET(request: NextRequest) {
     { Показатель: 'Управленческие плюсы', Значение: toRub(managementPlusTotal) },
     { Показатель: 'Управленческие минусы', Значение: toRub(managementMinusTotal) },
     { Показатель: 'Управленческий итог', Значение: toRub(managementResult) },
+    {
+      Показатель: 'COGS продаж влияет на итог',
+      Значение: dashboardSettings.include_sales_cogs ? 'Да' : 'Нет'
+    },
+    { Показатель: 'COGS продаж (продано)', Значение: toRub(salesCostOnly) },
+    {
+      Показатель: 'COGS продаж (восстановление по возвратам)',
+      Значение: toRub(salesReturnCostRecovery)
+    },
+    { Показатель: 'COGS продаж (чистая)', Значение: toRub(salesNetCogs) },
     { Показатель: 'Финансы: доходы', Значение: toRub(incomeTotal) },
     { Показатель: 'Финансы: расходы', Значение: toRub(expenseTotal) },
     {

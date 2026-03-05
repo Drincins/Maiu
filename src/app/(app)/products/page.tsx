@@ -16,12 +16,27 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
 
   let query = supabase
     .from('product_models')
-    .select('id, name, is_active, main_image_url, product_variants(size, unit_price, unit_cost)')
+    .select(
+      'id, name, is_active, main_image_url, collection_id, collection:product_collections(id, name), product_variants(size, unit_price, unit_cost)'
+    )
     .order('created_at', { ascending: false })
 
   query = query.eq('is_active', view === 'archived' ? false : true)
 
-  const { data: models } = await query
+  const [{ data: models }, { data: collections }] = await Promise.all([
+    query,
+    supabase.from('product_collections').select('id, name').order('name')
+  ])
+
+  const normalizeCollection = (value: unknown) => {
+    if (Array.isArray(value)) return value[0] ?? null
+    return value ?? null
+  }
+
+  const normalizedModels = (models ?? []).map((model: any) => ({
+    ...model,
+    collection: normalizeCollection(model.collection)
+  }))
 
   const toggleClass = (active: boolean) =>
     `rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
@@ -53,9 +68,11 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
       </div>
 
       <Card>
-        <ProductListClient models={models ?? []} />
+        <ProductListClient
+          models={normalizedModels}
+          collections={collections ?? []}
+        />
       </Card>
     </div>
   )
 }
-

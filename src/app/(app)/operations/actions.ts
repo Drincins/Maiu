@@ -60,8 +60,9 @@ export async function updateOperation(operationId: string, payload: Record<strin
 export async function deleteOperation(operationId: string) {
   const supabase = await createClient()
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (!user) {
     return { error: 'Not authenticated' }

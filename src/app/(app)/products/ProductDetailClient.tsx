@@ -50,15 +50,17 @@ type ProductDetailClientProps = {
   model: Model
   variants: Variant[]
   collections: { id: string; name: string }[]
-  techCard: {
-    id: string
-    name: string
-    color: string | null
-    sizes: string[]
-    total_cost: number
-    line_count: number
-    updated_at: string | null
-  }
+  techCard:
+    | {
+        id: string
+        name: string
+        color: string | null
+        sizes: string[]
+        total_cost: number
+        line_count: number
+        updated_at: string | null
+      }
+    | null
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -402,40 +404,60 @@ export default function ProductDetailClient({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Техкарта</h2>
-            <p className="text-sm text-slate-500">{techCard.name}</p>
-          </div>
-          <Link href={`/products/${model.id}/tech-card`}>
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-brand-200 hover:text-brand-700"
-              title="Редактировать техкарту"
-              aria-label="Редактировать техкарту"
-            >
-              <PencilIcon className="h-4 w-4" />
-            </button>
-          </Link>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Итого</p>
-            <p className="text-sm font-semibold text-slate-900">{formatMoney(techCard.total_cost)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Строк в техкарте</p>
-            <p className="text-sm font-semibold text-slate-900">{techCard.line_count}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Размеры</p>
-            <p className="text-sm font-semibold text-slate-900">
-              {techCard.sizes.length ? techCard.sizes.join(', ') : '—'}
+            <p className="text-sm text-slate-500">
+              {techCard ? techCard.name : 'Техкарта пока не создана'}
             </p>
           </div>
+          <Link href={`/products/${model.id}/tech-card`}>
+            {techCard ? (
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-brand-200 hover:text-brand-700"
+                title="Редактировать техкарту"
+                aria-label="Редактировать техкарту"
+              >
+                <PencilIcon className="h-4 w-4" />
+              </button>
+            ) : (
+              <Button type="button" variant="secondary">
+                Создать техкарту
+              </Button>
+            )}
+          </Link>
         </div>
-        {techCard.updated_at ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Обновлено: {new Date(techCard.updated_at).toLocaleString('ru-RU')}
-          </p>
-        ) : null}
+        {techCard ? (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Итого</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatMoney(techCard.total_cost)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  Строк в техкарте
+                </p>
+                <p className="text-sm font-semibold text-slate-900">{techCard.line_count}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Размеры</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {techCard.sizes.length ? techCard.sizes.join(', ') : '—'}
+                </p>
+              </div>
+            </div>
+            {techCard.updated_at ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Обновлено: {new Date(techCard.updated_at).toLocaleString('ru-RU')}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+            Техкарта для этой модели ещё не заполнена. Себестоимость SKU можно менять без неё.
+          </div>
+        )}
       </Card>
 
       <Card>

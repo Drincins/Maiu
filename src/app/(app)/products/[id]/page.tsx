@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ProductDetailClient from '../ProductDetailClient'
 
@@ -55,24 +55,24 @@ export default async function ProductDetailPage({
     notFound()
   }
 
-  if (!techCard) {
-    redirect(`/products/${id}/tech-card?returnToProduct=1`)
-  }
-
   return (
     <ProductDetailClient
       model={model}
       variants={variants ?? []}
       collections={collections ?? []}
-      techCard={{
-        id: techCard.id,
-        name: techCard.name ?? model.name,
-        color: techCard.color ?? null,
-        sizes: Array.isArray(techCard.sizes) ? techCard.sizes : [],
-        total_cost: computeTechCardTotal(techCard),
-        line_count: Array.isArray(techCard.lines) ? techCard.lines.length : 0,
-        updated_at: techCard.updated_at ?? null
-      }}
+      techCard={
+        techCard
+          ? {
+              id: techCard.id,
+              name: techCard.name ?? model.name,
+              color: techCard.color ?? null,
+              sizes: Array.isArray(techCard.sizes) ? techCard.sizes : [],
+              total_cost: computeTechCardTotal(techCard),
+              line_count: Array.isArray(techCard.lines) ? techCard.lines.length : 0,
+              updated_at: techCard.updated_at ?? null
+            }
+          : null
+      }
     />
   )
 }

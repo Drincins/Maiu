@@ -26,7 +26,6 @@ export async function ensureDefaults(userId?: string) {
     .from('locations')
     .select('id, type')
 
-  const existingTypes = new Set((existingLocations ?? []).map((loc) => loc.type))
   const defaultLocations = [
     { name: 'Склад Продажи', type: 'sales' },
     { name: 'Склад Реклама/PR', type: 'promo' },
@@ -34,13 +33,11 @@ export async function ensureDefaults(userId?: string) {
     { name: 'Блогер', type: 'blogger' },
     { name: 'Списание', type: 'scrap' }
   ]
-  const missingLocations = defaultLocations.filter(
-    (location) => !existingTypes.has(location.type)
-  )
+  const shouldBootstrapLocations = (existingLocations ?? []).length === 0
 
-  if (missingLocations.length) {
+  if (shouldBootstrapLocations) {
     await supabase.from('locations').insert(
-      missingLocations.map((location) => ({
+      defaultLocations.map((location) => ({
         user_id: resolvedUserId,
         ...location
       }))

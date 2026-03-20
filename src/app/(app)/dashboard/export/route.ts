@@ -24,6 +24,8 @@ type OperationRow = {
   discount_type_snapshot?: string | null
   discount_value_snapshot?: number | null
   city?: string | null
+  from_location?: { type?: string | null } | Array<{ type?: string | null }> | null
+  to_location?: { type?: string | null } | Array<{ type?: string | null }> | null
   operation_lines?: OperationLine[]
 }
 
@@ -82,6 +84,13 @@ const calculateDiscount = (revenue: number, type?: string | null, value?: number
   return Math.min(fixedDiscountInKopecks, normalizedRevenue)
 }
 
+const normalizeLocation = (
+  value: OperationRow['from_location'] | OperationRow['to_location']
+) => {
+  if (!value) return null
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const {
@@ -119,7 +128,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('operations')
         .select(
-          'id, occurred_at, type, city, delivery_cost, promo_code_snapshot, discount_type_snapshot, discount_value_snapshot, operation_lines(qty, unit_price_snapshot, unit_cost_snapshot)'
+          'id, occurred_at, type, city, delivery_cost, promo_code_snapshot, discount_type_snapshot, discount_value_snapshot, from_location:locations!operations_from_location_id_fkey(type), to_location:locations!operations_to_location_id_fkey(type), operation_lines(qty, unit_price_snapshot, unit_cost_snapshot)'
         )
         .in('type', ['sale', 'sale_return'])
     ),
@@ -147,8 +156,19 @@ export async function GET(request: NextRequest) {
     : normalizeDashboardSettings(rawDashboardSettings)
 
   const salesRows = ((salesOps as OperationRow[] | null | undefined) ?? []).map((op) => {
-    const isSaleReturn = op.type === 'sale_return'
-    const sign = isSaleReturn ? -1 : 1
+    const fromLocation = normalizeLocation(op.from_location)
+    const toLocation = normalizeLocation(op.to_location)
+    const isSaleReturnByLocation =
+      fromLocation?.type === 'sold' && toLocation?.type === 'sales'
+    const isSaleByLocation = toLocation?.type === 'sold'
+    const resolvedType = isSaleReturnByLocation
+      ? 'sale_return'
+      : isSaleByLocation
+        ? 'sale'
+        : op.type === 'sale_return'
+          ? 'sale_return'
+          : 'sale'
+    const sign = resolvedType === 'sale_return' ? -1 : 1
     const lines = op.operation_lines ?? []
     const qty = lines.reduce((sum, line) => sum + (line.qty ?? 0), 0)
     const grossRevenue = lines.reduce(
@@ -170,7 +190,7 @@ export async function GET(request: NextRequest) {
     return {
       id: op.id,
       occurred_at: op.occurred_at,
-      type: isSaleReturn ? 'sale_return' : 'sale',
+      type: resolvedType,
       city: op.city ?? null,
       promo_code: op.promo_code_snapshot ?? null,
       qty: qty * sign,

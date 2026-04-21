@@ -30,6 +30,7 @@ type OperationRow = {
   occurred_at: string
   city: string | null
   delivery_cost: number | null
+  tracking_number: string | null
   note: string | null
   from_location_id: string | null
   to_location_id: string | null
@@ -226,6 +227,7 @@ export default function OperationsTableClient({
 
       const haystack = [
         operation.id,
+        operation.tracking_number ?? '',
         typeLabels[operation.type] ?? operation.type,
         operation.city ?? '',
         operation.note ?? '',
@@ -631,7 +633,7 @@ export default function OperationsTableClient({
                 Поиск
                 <input
                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal"
-                  placeholder="ID, тип, город, комментарий, локация"
+                  placeholder="ID, трек-код, тип, город, комментарий, локация"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                 />
@@ -721,6 +723,7 @@ export default function OperationsTableClient({
             <TH>{renderSortableHeader('Дата', 'occurred_at')}</TH>
             <TH>{renderSortableHeader('Тип', 'type')}</TH>
             <TH>{renderSortableHeader('Город', 'city')}</TH>
+            <TH>Трек-номер</TH>
             <TH>{renderSortableHeader('Доставка', 'delivery_cost')}</TH>
             <TH>Откуда → Куда</TH>
             <TH>Проблемы</TH>
@@ -745,6 +748,9 @@ export default function OperationsTableClient({
                     <Badge tone="info">{typeLabels[operation.type] ?? operation.type}</Badge>
                   </TD>
                   <TD>{operation.city ?? '—'}</TD>
+                  <TD className="font-medium text-slate-700">
+                    {operation.tracking_number ?? '—'}
+                  </TD>
                   <TD>{operation.delivery_cost ? formatMoney(operation.delivery_cost) : '—'}</TD>
                   <TD>
                     {fromName} → {toName}
@@ -761,7 +767,7 @@ export default function OperationsTableClient({
             })
           ) : (
             <TR>
-              <TD colSpan={8} className="text-center text-slate-500">
+              <TD colSpan={9} className="text-center text-slate-500">
                 Ничего не найдено по выбранным параметрам
               </TD>
             </TR>

@@ -15,6 +15,7 @@ export default async function OperationsPage() {
       occurred_at,
       city,
       delivery_cost,
+      tracking_number,
       note,
       from_location_id,
       to_location_id,
@@ -115,6 +116,7 @@ export default async function OperationsPage() {
             occurred_at: string
             city: string | null
             delivery_cost: number | null
+            tracking_number: string | null
             note: string | null
             from_location_id: string | null
             to_location_id: string | null

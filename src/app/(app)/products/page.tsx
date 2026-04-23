@@ -5,7 +5,7 @@ import { Button } from '@/components/Button'
 import ProductListClient from './ProductListClient'
 
 type ProductsPageProps = {
-  searchParams?: Promise<{ view?: string }> | { view?: string }
+  searchParams?: Promise<{ view?: string }>
 }
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {

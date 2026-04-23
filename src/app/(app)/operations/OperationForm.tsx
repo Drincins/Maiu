@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, Fragment } from 'react'
+import { useState, useTransition, useEffect, Fragment, useRef } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -195,6 +195,38 @@ export default function OperationForm({
     })
     .filter(Boolean) as Array<Location & { label: string }>
 
+  const defaultLocationsByType = (type: OperationFormValues['type']) => {
+    switch (type) {
+      case 'sale':
+        return {
+          from: locationIdByType('sales') ?? '',
+          to: locationIdByType('sold') ?? ''
+        }
+      case 'ship_blogger':
+        return {
+          from: locationIdByType('promo') || locationIdByType('sales') || '',
+          to: locationIdByType('blogger') ?? ''
+        }
+      case 'return_blogger':
+        return {
+          from: locationIdByType('blogger') ?? '',
+          to: locationIdByType('promo') || locationIdByType('sales') || ''
+        }
+      case 'writeoff':
+        return {
+          from: '',
+          to: locationIdByType('scrap') ?? ''
+        }
+      case 'sale_return':
+        return {
+          from: locationIdByType('sold') ?? '',
+          to: locationIdByType('sales') ?? ''
+        }
+      default:
+        return null
+    }
+  }
+
   const form = useForm<OperationFormValues>({
     resolver: zodResolver(schema),
     defaultValues:
@@ -222,46 +254,33 @@ export default function OperationForm({
   })
 
   const selectedType = form.watch('type')
+  const previousTypeRef = useRef<OperationFormValues['type'] | null>(null)
   const draftVariant = variants.find((item) => item.id === lineDraft.variant_id)
   const lineFormError = form.formState.errors.lines?.message as string | undefined
 
   useEffect(() => {
-    if (selectedType === 'sale') {
-      form.setValue('from_location_id', form.getValues('from_location_id') || locationIdByType('sales'))
-      form.setValue('to_location_id', form.getValues('to_location_id') || locationIdByType('sold'))
+    const previousType = previousTypeRef.current
+    const previousDefaults = previousType ? defaultLocationsByType(previousType) : null
+    const nextDefaults = defaultLocationsByType(selectedType)
+
+    if (nextDefaults) {
+      const currentFrom = form.getValues('from_location_id') || ''
+      const currentTo = form.getValues('to_location_id') || ''
+      const shouldUpdateFrom =
+        !currentFrom || (previousDefaults ? currentFrom === previousDefaults.from : true)
+      const shouldUpdateTo =
+        !currentTo || (previousDefaults ? currentTo === previousDefaults.to : true)
+
+      if (nextDefaults.from && shouldUpdateFrom) {
+        form.setValue('from_location_id', nextDefaults.from)
+      }
+      if (nextDefaults.to && shouldUpdateTo) {
+        form.setValue('to_location_id', nextDefaults.to)
+      }
     }
-    if (selectedType === 'ship_blogger') {
-      form.setValue(
-        'from_location_id',
-        form.getValues('from_location_id') ||
-          locationIdByType('promo') ||
-          locationIdByType('sales')
-      )
-      form.setValue(
-        'to_location_id',
-        form.getValues('to_location_id') || locationIdByType('blogger')
-      )
-    }
-    if (selectedType === 'return_blogger') {
-      form.setValue(
-        'to_location_id',
-        form.getValues('to_location_id') ||
-          locationIdByType('promo') ||
-          locationIdByType('sales')
-      )
-      form.setValue(
-        'from_location_id',
-        form.getValues('from_location_id') || locationIdByType('blogger')
-      )
-    }
-    if (selectedType === 'writeoff') {
-      form.setValue('to_location_id', form.getValues('to_location_id') || locationIdByType('scrap'))
-    }
-    if (selectedType === 'sale_return') {
-      form.setValue('from_location_id', form.getValues('from_location_id') || locationIdByType('sold'))
-      form.setValue('to_location_id', form.getValues('to_location_id') || locationIdByType('sales'))
-    }
-  }, [selectedType, locations])
+
+    previousTypeRef.current = selectedType
+  }, [selectedType, locations, form])
 
   const handleSubmit = (values: OperationFormValues) => {
     setServerError(null)
@@ -516,6 +535,17 @@ export default function OperationForm({
   return (
     <Card>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
+        {!locations.length ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            Локации не загружены. Поля "Откуда" и "Куда" будут пустыми, пока
+            справочник складов недоступен.
+          </div>
+        ) : null}
+        {!variants.length ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            SKU не загружены. Добавить товар в операцию пока нельзя.
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Тип операции">
             <select
@@ -560,6 +590,11 @@ export default function OperationForm({
                   ))}
                 </optgroup>
               ) : null}
+              {!warehouseLocations.length && !salesLocations.length ? (
+                <option value="" disabled>
+                  Справочник локаций пуст
+                </option>
+              ) : null}
             </select>
           </Field>
           <Field label="Куда">
@@ -585,6 +620,11 @@ export default function OperationForm({
                     </option>
                   ))}
                 </optgroup>
+              ) : null}
+              {!warehouseLocations.length && !salesLocations.length ? (
+                <option value="" disabled>
+                  Справочник локаций пуст
+                </option>
               ) : null}
             </select>
           </Field>
@@ -715,6 +755,11 @@ export default function OperationForm({
                         {item.sku} {item.size ? `(${item.size})` : ''}
                       </option>
                     ))}
+                    {!variants.length ? (
+                      <option value="" disabled>
+                        Справочник SKU пуст
+                      </option>
+                    ) : null}
                   </select>
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-2">

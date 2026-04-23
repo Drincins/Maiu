@@ -12,9 +12,7 @@ import {
 } from './settings'
 
 type DashboardPageProps = {
-  searchParams?:
-    | Promise<{ from?: string; to?: string; report?: string; scope?: string }>
-    | { from?: string; to?: string; report?: string; scope?: string }
+  searchParams?: Promise<{ from?: string; to?: string; report?: string; scope?: string }>
 }
 
 type OperationLine = {

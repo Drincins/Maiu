@@ -4,6 +4,41 @@ import { Card } from '@/components/Card'
 import { Button } from '@/components/Button'
 import OperationsTableClient from './OperationsTableClient'
 
+type OperationLineRow = {
+  operation_id: string | null
+  qty: number
+  unit_price_snapshot: number | null
+  unit_cost_snapshot: number | null
+  product_variants?:
+    | {
+        sku: string | null
+        size: string | null
+        color: string | null
+        product_models?:
+          | {
+              name: string | null
+            }
+          | Array<{
+              name: string | null
+            }>
+          | null
+      }
+    | Array<{
+        sku: string | null
+        size: string | null
+        color: string | null
+        product_models?:
+          | {
+              name: string | null
+            }
+          | Array<{
+              name: string | null
+            }>
+          | null
+      }>
+    | null
+}
+
 export default async function OperationsPage() {
   const supabase = await createClient()
 
@@ -19,42 +54,77 @@ export default async function OperationsPage() {
       note,
       from_location_id,
       to_location_id,
-      promo_code_id,
-      operation_lines (
-        qty,
-        unit_price_snapshot,
-        unit_cost_snapshot,
-        product_variants (
-          sku,
-          size,
-          color,
-          product_models (
-            name
-          )
-        )
-      )
+      promo_code_id
     `)
     .order('occurred_at', { ascending: false })
     .limit(500)
 
+  const operationRows = operations ?? []
+  const operationIds = operationRows.map((operation) => operation.id)
+
   const locationIds = Array.from(
     new Set(
-      (operations ?? [])
+      operationRows
         .flatMap((operation) => [operation.from_location_id, operation.to_location_id])
         .filter(Boolean)
     )
   ) as string[]
 
-  const { data: locations, error: locationsError } = locationIds.length
-    ? await supabase.from('locations').select('id, name').in('id', locationIds)
-    : { data: [], error: null }
+  const [
+    { data: locations, error: locationsError },
+    { data: operationLines, error: linesError },
+    { data: issueLines, error: issueError }
+  ] = await Promise.all([
+    locationIds.length
+      ? supabase.from('locations').select('id, name').in('id', locationIds)
+      : Promise.resolve({ data: [], error: null }),
+    operationIds.length
+      ? supabase
+          .from('operation_lines')
+          .select(
+            `
+            operation_id,
+            qty,
+            unit_price_snapshot,
+            unit_cost_snapshot,
+            product_variants (
+              sku,
+              size,
+              color,
+              product_models (
+                name
+              )
+            )
+          `
+        )
+          .in('operation_id', operationIds)
+      : Promise.resolve({ data: [], error: null }),
+    operationIds.length
+      ? supabase
+          .from('operation_lines')
+          .select('operation_id')
+          .in('operation_id', operationIds)
+          .ilike('line_note', '%MARKING_NOT_HANDLED%')
+      : Promise.resolve({ data: [], error: null })
+  ])
 
-  const { data: issueLines, error: issueError } = await supabase
-    .from('operation_lines')
-    .select('operation_id')
-    .ilike('line_note', '%MARKING_NOT_HANDLED%')
+  const operationLineRows = (operationLines ?? []) as OperationLineRow[]
+  const linesByOperationId = new Map<string, OperationLineRow[]>()
+  operationLineRows.forEach((line) => {
+    if (!line.operation_id) return
+    const existing = linesByOperationId.get(line.operation_id) ?? []
+    existing.push(line)
+    linesByOperationId.set(line.operation_id, existing)
+  })
 
-  const isEmpty = (operations ?? []).length === 0
+  const operationsWithLines = operationRows.map((operation) => ({
+    ...operation,
+    operation_lines: (linesByOperationId.get(operation.id) ?? []).map(
+      ({ operation_id: _operationId, ...line }) => line
+    )
+  }))
+
+  const isEmpty = !operationsError && operationRows.length === 0
 
   const { count: operationsCount, error: operationsCountError } = isEmpty
     ? await supabase.from('operations').select('id', { count: 'exact', head: true })
@@ -103,6 +173,12 @@ export default async function OperationsPage() {
           </div>
         ) : null}
 
+        {linesError ? (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+            Ошибка загрузки строк операций: {linesError.message}
+          </div>
+        ) : null}
+
         {issueError ? (
           <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
             Ошибка загрузки пометок: {issueError.message}
@@ -110,7 +186,7 @@ export default async function OperationsPage() {
         ) : null}
 
         <OperationsTableClient
-          operations={(operations ?? []) as Array<{
+          operations={operationsWithLines as Array<{
             id: string
             type: string
             occurred_at: string

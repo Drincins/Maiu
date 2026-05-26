@@ -5,6 +5,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/Table'
 import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/Button'
 import { Field } from '@/components/Field'
+import { getBusinessToday, toBusinessDateBoundaryIso } from '@/lib/businessDate'
 import {
   DASHBOARD_SETTINGS_DEFAULTS,
   DASHBOARD_SETTINGS_SELECT,
@@ -48,7 +49,7 @@ type FinanceRow = {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const supabase = await createClient()
   const resolvedSearchParams = await searchParams
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getBusinessToday()
   const scope = resolvedSearchParams?.scope
   const isAllTime = scope === 'all'
   const normalizeDateParam = (value?: string) => (value?.trim() ? value : today)
@@ -59,15 +60,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? reportParam
     : ''
 
-  const toBoundaryIso = (value: string | null, boundary: 'start' | 'end') => {
-    if (!value) return null
-    const source = boundary === 'start' ? `${value}T00:00:00` : `${value}T23:59:59.999`
-    const parsed = new Date(source)
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
-  }
-
-  const fromISO = toBoundaryIso(from, 'start')
-  const toISO = toBoundaryIso(to, 'end')
+  const fromISO = toBusinessDateBoundaryIso(from, 'start')
+  const toISO = toBusinessDateBoundaryIso(to, 'end')
 
   const applyDateFilter = (query: any) => {
     let next = query

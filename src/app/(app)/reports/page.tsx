@@ -1,9 +1,7 @@
 ﻿import { redirect } from 'next/navigation'
 
 type ReportsPageProps = {
-  searchParams?:
-    | Promise<{ from?: string; to?: string; report?: string }>
-    | { from?: string; to?: string; report?: string }
+  searchParams?: Promise<{ from?: string; to?: string; report?: string }>
 }
 
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {

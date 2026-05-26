@@ -7,6 +7,7 @@ const links = [
   { href: '/products', label: 'Товары' },
   { href: '/inventory', label: 'Остатки' },
   { href: '/operations', label: 'Операции' },
+  { href: '/sales', label: 'Продажи' },
   { href: '/finance', label: 'Финансы' },
   { href: '/finance/settings', label: 'Справочники' }
 ]

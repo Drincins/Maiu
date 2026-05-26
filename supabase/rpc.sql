@@ -39,6 +39,7 @@ declare
   v_adj_delta integer;
   v_loc_for_adjustment uuid;
   v_code text;
+  v_available_qty integer;
 begin
   v_user := auth.uid();
   if v_user is null then
@@ -213,6 +214,18 @@ begin
       if v_from_location is null or v_to_location is null then
         raise exception 'from_location_id and to_location_id are required for this operation type';
       end if;
+      select coalesce(sum(qty_delta), 0)::int
+        into v_available_qty
+      from public.stock_movements
+      where user_id = v_user
+        and variant_id = v_variant_id
+        and location_id = v_from_location;
+
+      if v_available_qty < v_qty then
+        raise exception 'not enough stock for variant % at source location: available %, requested %',
+          v_variant_id, v_available_qty, v_qty;
+      end if;
+
       insert into public.stock_movements (
         user_id, occurred_at, operation_id, operation_line_id,
         variant_id, location_id, qty_delta, unit_cost_snapshot, unit_price_snapshot
@@ -236,6 +249,20 @@ begin
       if v_loc_for_adjustment is null then
         raise exception 'location_id is required for adjustment';
       end if;
+      if v_adj_delta < 0 then
+        select coalesce(sum(qty_delta), 0)::int
+          into v_available_qty
+        from public.stock_movements
+        where user_id = v_user
+          and variant_id = v_variant_id
+          and location_id = v_loc_for_adjustment;
+
+        if v_available_qty < abs(v_adj_delta) then
+          raise exception 'not enough stock for adjustment: available %, requested delta %',
+            v_available_qty, v_adj_delta;
+        end if;
+      end if;
+
       insert into public.stock_movements (
         user_id, occurred_at, operation_id, operation_line_id,
         variant_id, location_id, qty_delta, unit_cost_snapshot, unit_price_snapshot
@@ -353,6 +380,7 @@ declare
   v_adj_delta integer;
   v_loc_for_adjustment uuid;
   v_code text;
+  v_available_qty integer;
 begin
   v_user := auth.uid();
   if v_user is null then
@@ -485,10 +513,6 @@ begin
     v_line_note := v_line->>'line_note';
     v_marking_not_handled := coalesce((v_line->>'marking_not_handled')::boolean, false);
 
-    if v_variant_marked and not v_marking_not_handled then
-      raise exception 'editing marked operations is not supported; enable marking_not_handled';
-    end if;
-
     if v_marking_not_handled then
       v_line_note := trim(both ' ' from coalesce(v_line_note, '') || ' [MARKING_NOT_HANDLED]');
     end if;
@@ -524,6 +548,18 @@ begin
       if v_from_location is null or v_to_location is null then
         raise exception 'from_location_id and to_location_id are required for this operation type';
       end if;
+      select coalesce(sum(qty_delta), 0)::int
+        into v_available_qty
+      from public.stock_movements
+      where user_id = v_user
+        and variant_id = v_variant_id
+        and location_id = v_from_location;
+
+      if v_available_qty < v_qty then
+        raise exception 'not enough stock for variant % at source location: available %, requested %',
+          v_variant_id, v_available_qty, v_qty;
+      end if;
+
       insert into public.stock_movements (
         user_id, occurred_at, operation_id, operation_line_id,
         variant_id, location_id, qty_delta, unit_cost_snapshot, unit_price_snapshot
@@ -547,6 +583,20 @@ begin
       if v_loc_for_adjustment is null then
         raise exception 'location_id is required for adjustment';
       end if;
+      if v_adj_delta < 0 then
+        select coalesce(sum(qty_delta), 0)::int
+          into v_available_qty
+        from public.stock_movements
+        where user_id = v_user
+          and variant_id = v_variant_id
+          and location_id = v_loc_for_adjustment;
+
+        if v_available_qty < abs(v_adj_delta) then
+          raise exception 'not enough stock for adjustment: available %, requested delta %',
+            v_available_qty, v_adj_delta;
+        end if;
+      end if;
+
       insert into public.stock_movements (
         user_id, occurred_at, operation_id, operation_line_id,
         variant_id, location_id, qty_delta, unit_cost_snapshot, unit_price_snapshot

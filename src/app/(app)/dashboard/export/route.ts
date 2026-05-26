@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
+import { getBusinessToday, toBusinessDateBoundaryIso } from '@/lib/businessDate'
 import {
   DASHBOARD_SETTINGS_DEFAULTS,
   DASHBOARD_SETTINGS_SELECT,
@@ -43,13 +44,6 @@ type FinanceRow = {
 const toRuDateTime = (value: string | null | undefined) => {
   if (!value) return ''
   return new Date(value).toLocaleString('ru-RU')
-}
-
-const toBoundaryIso = (value: string | null, boundary: 'start' | 'end') => {
-  if (!value) return null
-  const source = boundary === 'start' ? `${value}T00:00:00` : `${value}T23:59:59.999`
-  const parsed = new Date(source)
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
 const toRub = (kopecks: number | null | undefined) => (kopecks ?? 0) / 100
@@ -105,11 +99,11 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const scope = searchParams.get('scope')
   const isAllTime = scope === 'all'
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getBusinessToday()
   const from = isAllTime ? null : (searchParams.get('from') || today)
   const to = isAllTime ? null : (searchParams.get('to') || today)
-  const fromISO = toBoundaryIso(from, 'start')
-  const toISO = toBoundaryIso(to, 'end')
+  const fromISO = toBusinessDateBoundaryIso(from, 'start')
+  const toISO = toBusinessDateBoundaryIso(to, 'end')
 
   const applyDateFilter = (query: any) => {
     let next = query

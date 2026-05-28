@@ -225,6 +225,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
             <TH>Клиент</TH>
             <TH>Состав</TH>
             <TH>Доставка</TH>
+            <TH>Комментарий</TH>
             <TH>Сумма</TH>
             <TH>Сменить статус</TH>
           </TR>
@@ -273,6 +274,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                       <div className="text-xs text-slate-500">{order.tracking_number}</div>
                     ) : null}
                   </TD>
+                  <TD className="max-w-[220px] truncate">{order.note ?? '—'}</TD>
                   <TD>{formatMoney(order.total_amount ?? 0)}</TD>
                   <TD>
                     <select
@@ -295,7 +297,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
             })
           ) : (
             <TR>
-              <TD colSpan={8} className="text-center text-slate-500">
+              <TD colSpan={9} className="text-center text-slate-500">
                 Продажи не найдены
               </TD>
             </TR>

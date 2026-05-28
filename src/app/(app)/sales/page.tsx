@@ -3,6 +3,7 @@ import { Card } from '@/components/Card'
 import SalesTableClient from './SalesTableClient'
 
 type SalesOrderItemRow = {
+  variant_id: string | null
   qty: number
   product_name_snapshot: string | null
   sku_snapshot: string | null
@@ -54,6 +55,7 @@ export default async function SalesPage() {
       paid_amount,
       note,
       sales_order_items (
+        variant_id,
         qty,
         product_name_snapshot,
         sku_snapshot,

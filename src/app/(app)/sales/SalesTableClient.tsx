@@ -15,9 +15,10 @@ import {
   type SalesOrderSource,
   type SalesOrderStatus
 } from '@/lib/sales'
-import { updateSalesOrderStatus } from './actions'
+import { createSalesReturn, updateSalesOrderStatus } from './actions'
 
 type SalesOrderItemRow = {
+  variant_id: string | null
   qty: number
   product_name_snapshot: string | null
   sku_snapshot: string | null
@@ -57,6 +58,8 @@ const statusLabel = (status: string) =>
 
 const statusTone = (status: string) =>
   isSalesOrderStatus(status) ? getSalesStatusTone(status) : 'neutral'
+
+const closedReturnStatuses = new Set(['returned_to_stock', 'refunded', 'cancelled'])
 
 export default function SalesTableClient({ orders }: SalesTableClientProps) {
   const [rows, setRows] = useState(orders)
@@ -137,6 +140,38 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                 ...order,
                 status,
                 status_changed_at: new Date().toISOString()
+              }
+            : order
+        )
+      )
+      setPendingId(null)
+    })
+  }
+
+  const createReturn = (orderId: string) => {
+    const confirmed = window.confirm(
+      'Оформить возврат по всей продаже? Будет создана складская операция возврата.'
+    )
+    if (!confirmed) return
+
+    setPendingId(orderId)
+    setActionError(null)
+
+    startTransition(async () => {
+      const result = await createSalesReturn(orderId)
+      if (!result?.ok) {
+        setActionError(result?.error ?? 'Не удалось оформить возврат')
+        setPendingId(null)
+        return
+      }
+
+      setRows((prev) =>
+        prev.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                status: result.status,
+                status_changed_at: result.changedAt
               }
             : order
         )
@@ -227,7 +262,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
             <TH>Доставка</TH>
             <TH>Комментарий</TH>
             <TH>Сумма</TH>
-            <TH>Сменить статус</TH>
+            <TH>Действия</TH>
           </TR>
         </THead>
         <TBody>
@@ -250,6 +285,9 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                 order.customer_email ||
                 order.city ||
                 '—'
+              const canCreateReturn =
+                !closedReturnStatuses.has(order.status) &&
+                Boolean(order.sales_order_items?.length)
 
               return (
                 <TR key={order.id}>
@@ -277,20 +315,33 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                   <TD className="max-w-[220px] truncate">{order.note ?? '—'}</TD>
                   <TD>{formatMoney(order.total_amount ?? 0)}</TD>
                   <TD>
-                    <select
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      value={isSalesOrderStatus(order.status) ? order.status : 'problem'}
-                      disabled={isPending && pendingId === order.id}
-                      onChange={(event) =>
-                        updateStatus(order.id, event.target.value as SalesOrderStatus)
-                      }
-                    >
-                      {SALES_ORDER_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {getSalesStatusLabel(status)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex min-w-[190px] flex-col gap-2">
+                      <select
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        value={isSalesOrderStatus(order.status) ? order.status : 'problem'}
+                        disabled={isPending && pendingId === order.id}
+                        onChange={(event) =>
+                          updateStatus(order.id, event.target.value as SalesOrderStatus)
+                        }
+                      >
+                        {SALES_ORDER_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {getSalesStatusLabel(status)}
+                          </option>
+                        ))}
+                      </select>
+                      {canCreateReturn ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="px-3 py-2 text-[10px]"
+                          disabled={isPending && pendingId === order.id}
+                          onClick={() => createReturn(order.id)}
+                        >
+                          Оформить возврат
+                        </Button>
+                      ) : null}
+                    </div>
                   </TD>
                 </TR>
               )

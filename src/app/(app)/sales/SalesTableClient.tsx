@@ -15,7 +15,11 @@ import {
   type SalesOrderSource,
   type SalesOrderStatus
 } from '@/lib/sales'
-import { createSalesReturn, updateSalesOrderStatus } from './actions'
+import {
+  createSalesReturn,
+  updateSalesOrderChzStatus,
+  updateSalesOrderStatus
+} from './actions'
 
 type SalesOrderItemRow = {
   variant_id: string | null
@@ -31,6 +35,7 @@ type SalesOrderRow = {
   source: string
   source_external_id: string | null
   status: string
+  chz_submitted: boolean
   status_changed_at: string
   ordered_at: string
   customer_name: string | null
@@ -95,6 +100,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
         order.source_external_id ?? '',
         statusLabel(order.status),
         sourceLabel(order.source),
+        order.chz_submitted ? 'чз да внесен' : 'чз нет не внесен',
         order.customer_name ?? '',
         order.customer_phone ?? '',
         order.customer_email ?? '',
@@ -140,6 +146,32 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                 ...order,
                 status,
                 status_changed_at: new Date().toISOString()
+              }
+            : order
+        )
+      )
+      setPendingId(null)
+    })
+  }
+
+  const updateChzStatus = (orderId: string, chzSubmitted: boolean) => {
+    setPendingId(orderId)
+    setActionError(null)
+
+    startTransition(async () => {
+      const result = await updateSalesOrderChzStatus(orderId, chzSubmitted)
+      if (!result?.ok) {
+        setActionError(result?.error ?? 'Не удалось обновить ЧЗ')
+        setPendingId(null)
+        return
+      }
+
+      setRows((prev) =>
+        prev.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                chz_submitted: result.chzSubmitted
               }
             : order
         )
@@ -256,6 +288,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
           <TR>
             <TH>Дата</TH>
             <TH>Статус</TH>
+            <TH>Внесен в ЧЗ</TH>
             <TH>Источник</TH>
             <TH>Клиент</TH>
             <TH>Состав</TH>
@@ -294,6 +327,19 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
                   <TD>{new Date(order.ordered_at).toLocaleString('ru-RU')}</TD>
                   <TD>
                     <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
+                  </TD>
+                  <TD>
+                    <select
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      value={order.chz_submitted ? 'yes' : 'no'}
+                      disabled={isPending && pendingId === order.id}
+                      onChange={(event) =>
+                        updateChzStatus(order.id, event.target.value === 'yes')
+                      }
+                    >
+                      <option value="no">Нет</option>
+                      <option value="yes">Да</option>
+                    </select>
                   </TD>
                   <TD>{sourceLabel(order.source)}</TD>
                   <TD>
@@ -348,7 +394,7 @@ export default function SalesTableClient({ orders }: SalesTableClientProps) {
             })
           ) : (
             <TR>
-              <TD colSpan={9} className="text-center text-slate-500">
+              <TD colSpan={10} className="text-center text-slate-500">
                 Продажи не найдены
               </TD>
             </TR>

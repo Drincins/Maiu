@@ -280,6 +280,7 @@ create table if not exists public.sales_orders (
   source_payload jsonb not null default '{}'::jsonb,
   operation_id uuid references public.operations(id) on delete set null,
   status sales_order_status not null default 'needs_confirmation',
+  chz_submitted boolean not null default false,
   status_changed_at timestamptz not null default now(),
   ordered_at timestamptz not null default now(),
   customer_name text,

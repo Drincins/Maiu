@@ -28,7 +28,6 @@ export async function ensureDefaults(userId?: string) {
 
   const defaultLocations = [
     { name: 'Склад Продажи', type: 'sales' },
-    { name: 'Склад Реклама/PR', type: 'promo' },
     { name: 'Клиент', type: 'sold' },
     { name: 'Блогер', type: 'blogger' },
     { name: 'Списание', type: 'scrap' }

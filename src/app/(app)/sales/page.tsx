@@ -16,6 +16,7 @@ type SalesOrderRow = {
   source: string
   source_external_id: string | null
   status: string
+  chz_submitted: boolean
   status_changed_at: string
   ordered_at: string
   customer_name: string | null
@@ -42,6 +43,7 @@ export default async function SalesPage() {
       source,
       source_external_id,
       status,
+      chz_submitted,
       status_changed_at,
       ordered_at,
       customer_name,

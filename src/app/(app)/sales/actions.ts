@@ -110,6 +110,41 @@ export async function updateSalesOrderStatus(
   return { ok: true }
 }
 
+export async function updateSalesOrderChzStatus(
+  orderId: string,
+  chzSubmitted: boolean
+) {
+  const supabase = await createClient()
+  const {
+    data: { session }
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
+
+  if (!user) {
+    return { error: 'Not authenticated' }
+  }
+
+  const { data: order, error: orderError } = await supabase
+    .from('sales_orders')
+    .select('id')
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (orderError) return { error: orderError.message }
+  if (!order) return { error: 'Продажа не найдена' }
+
+  const { error: updateError } = await supabase
+    .from('sales_orders')
+    .update({ chz_submitted: chzSubmitted })
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+
+  if (updateError) return { error: updateError.message }
+
+  return { ok: true, chzSubmitted }
+}
+
 export async function createSalesReturn(orderId: string) {
   const supabase = await createClient()
   const {

@@ -180,7 +180,7 @@ export default function OperationForm({
     })
     return Array.from(map.values())
   }
-  const warehouseTypes = new Set(['sales', 'promo', 'other'])
+  const warehouseTypes = new Set(['sales'])
   const warehouseLocations = dedupeByName(
     locations.filter((location) => warehouseTypes.has(location.type))
   )
@@ -204,13 +204,13 @@ export default function OperationForm({
         }
       case 'ship_blogger':
         return {
-          from: locationIdByType('promo') || locationIdByType('sales') || '',
+          from: locationIdByType('sales') ?? '',
           to: locationIdByType('blogger') ?? ''
         }
       case 'return_blogger':
         return {
           from: locationIdByType('blogger') ?? '',
-          to: locationIdByType('promo') || locationIdByType('sales') || ''
+          to: locationIdByType('sales') ?? ''
         }
       case 'writeoff':
         return {

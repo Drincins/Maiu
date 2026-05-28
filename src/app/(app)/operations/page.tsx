@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/Card'
 import { Button } from '@/components/Button'
 import OperationsTableClient from './OperationsTableClient'
+import { chunkItems } from '@/lib/batches'
+
+const QUERY_BATCH_SIZE = 100
 
 type OperationLineRow = {
   operation_id: string | null
@@ -37,6 +40,85 @@ type OperationLineRow = {
           | null
       }>
     | null
+}
+
+type IssueLineRow = {
+  operation_id: string | null
+}
+
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+const combineBatchResults = <T,>(
+  results: Array<{ data: T[] | null; error: { message: string } | null }>
+) => ({
+  data: results.flatMap((result) => result.data ?? []),
+  error: results.find((result) => result.error)?.error ?? null
+})
+
+const fetchOperationLines = async (
+  supabase: SupabaseClient,
+  operationIds: string[]
+) => {
+  if (!operationIds.length) {
+    return { data: [] as OperationLineRow[], error: null }
+  }
+
+  const results = await Promise.all(
+    chunkItems(operationIds, QUERY_BATCH_SIZE).map((batch) =>
+      supabase
+        .from('operation_lines')
+        .select(
+          `
+          operation_id,
+          qty,
+          unit_price_snapshot,
+          unit_cost_snapshot,
+          product_variants (
+            sku,
+            size,
+            color,
+            product_models (
+              name
+            )
+          )
+        `
+        )
+        .in('operation_id', batch)
+    )
+  )
+
+  return combineBatchResults(
+    results.map((result) => ({
+      data: (result.data ?? []) as OperationLineRow[],
+      error: result.error
+    }))
+  )
+}
+
+const fetchIssueLines = async (
+  supabase: SupabaseClient,
+  operationIds: string[]
+) => {
+  if (!operationIds.length) {
+    return { data: [] as IssueLineRow[], error: null }
+  }
+
+  const results = await Promise.all(
+    chunkItems(operationIds, QUERY_BATCH_SIZE).map((batch) =>
+      supabase
+        .from('operation_lines')
+        .select('operation_id')
+        .in('operation_id', batch)
+        .ilike('line_note', '%MARKING_NOT_HANDLED%')
+    )
+  )
+
+  return combineBatchResults(
+    results.map((result) => ({
+      data: (result.data ?? []) as IssueLineRow[],
+      error: result.error
+    }))
+  )
 }
 
 export default async function OperationsPage() {
@@ -78,34 +160,8 @@ export default async function OperationsPage() {
     locationIds.length
       ? supabase.from('locations').select('id, name').in('id', locationIds)
       : Promise.resolve({ data: [], error: null }),
-    operationIds.length
-      ? supabase
-          .from('operation_lines')
-          .select(
-            `
-            operation_id,
-            qty,
-            unit_price_snapshot,
-            unit_cost_snapshot,
-            product_variants (
-              sku,
-              size,
-              color,
-              product_models (
-                name
-              )
-            )
-          `
-        )
-          .in('operation_id', operationIds)
-      : Promise.resolve({ data: [], error: null }),
-    operationIds.length
-      ? supabase
-          .from('operation_lines')
-          .select('operation_id')
-          .in('operation_id', operationIds)
-          .ilike('line_note', '%MARKING_NOT_HANDLED%')
-      : Promise.resolve({ data: [], error: null })
+    fetchOperationLines(supabase, operationIds),
+    fetchIssueLines(supabase, operationIds)
   ])
 
   const operationLineRows = (operationLines ?? []) as OperationLineRow[]
@@ -232,7 +288,9 @@ export default async function OperationsPage() {
             }>
           }>}
           locations={(locations ?? []) as Array<{ id: string; name: string }>}
-          issueOperationIds={(issueLines ?? []).map((line) => line.operation_id)}
+          issueOperationIds={(issueLines ?? [])
+            .map((line) => line.operation_id)
+            .filter((id): id is string => Boolean(id))}
         />
       </Card>
     </div>

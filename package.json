@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "test:unit": "rm -rf .tmp-tests && tsc --target ES2022 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --outDir .tmp-tests tests/unit/*.test.ts src/lib/batches.ts src/lib/businessDate.ts src/lib/sales.ts src/lib/salesExport.ts && node --test .tmp-tests/tests/unit/*.test.js",
+    "test:unit": "rm -rf .tmp-tests && tsc --target ES2022 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --outDir .tmp-tests tests/unit/*.test.ts src/lib/batches.ts src/lib/businessDate.ts src/lib/inventoryExport.ts src/lib/sales.ts src/lib/salesExport.ts && node --test .tmp-tests/tests/unit/*.test.js",
     "import:expenses": "node scripts/import_expenses_from_excel.mjs"
   },
   "dependencies": {

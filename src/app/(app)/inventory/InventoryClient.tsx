@@ -6,6 +6,10 @@ import { Field } from '@/components/Field'
 import { Button } from '@/components/Button'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/Table'
 import { createOperation } from '@/app/(app)/operations/actions'
+import {
+  INVENTORY_EXPORT_COLUMNS,
+  buildInventoryExportRows
+} from '@/lib/inventoryExport'
 
 type StockRow = {
   variant_id: string
@@ -63,6 +67,19 @@ type SortKey =
   | 'qty_desc'
 
 const STORAGE_LOCATION_TYPES = new Set(['sales', 'promo', 'other'])
+const BRAND_HEADER = 'FF74121D'
+const BRAND_BORDER = 'FFD7B1B7'
+
+const sortFieldLabels: Record<SortKey, string> = {
+  qty_desc: 'Остаток: по убыванию',
+  qty_asc: 'Остаток: по возрастанию',
+  sku_asc: 'SKU: А-Я',
+  sku_desc: 'SKU: Я-А',
+  model_asc: 'Модель: А-Я',
+  model_desc: 'Модель: Я-А',
+  location_asc: 'Локация: А-Я',
+  location_desc: 'Локация: Я-А'
+}
 
 export default function InventoryClient({ stock, variants, locations }: InventoryClientProps) {
   const [selectedModelId, setSelectedModelId] = useState('')
@@ -80,6 +97,8 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   const [sortBy, setSortBy] = useState<SortKey>('qty_desc')
   const [onlyActive, setOnlyActive] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   useEffect(() => {
     const now = new Date()
@@ -400,6 +419,180 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
 
   const handleCollapseAll = () => {
     setExpandedGroups({})
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    setExportError(null)
+
+    try {
+      const ExcelJS = await import('exceljs')
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = 'Maiu'
+      workbook.created = new Date()
+
+      const worksheet = workbook.addWorksheet('Остатки', {
+        views: [{ state: 'frozen', ySplit: 1 }]
+      })
+      worksheet.columns = [...INVENTORY_EXPORT_COLUMNS]
+
+      const exportRows = buildInventoryExportRows(rows)
+      if (exportRows.length) {
+        exportRows.forEach((row, index) => {
+          worksheet.addRow({
+            index: index + 1,
+            ...row
+          })
+        })
+      } else {
+        worksheet.addRow({ index: 1, productName: 'По выбранным фильтрам остатков не найдено' })
+      }
+
+      const totals = exportRows.reduce(
+        (acc, row) => ({
+          qty: acc.qty + row.qty,
+          sku: acc.sku.add(row.sku),
+          productName: acc.productName.add(row.productName),
+          locationName: acc.locationName.add(row.locationName)
+        }),
+        {
+          qty: 0,
+          sku: new Set<string>(),
+          productName: new Set<string>(),
+          locationName: new Set<string>()
+        }
+      )
+
+      const totalsRow = worksheet.addRow({
+        productName: 'ИТОГО',
+        sku: totals.sku.size,
+        locationName: totals.locationName.size,
+        qty: totals.qty
+      })
+
+      const headerRow = worksheet.getRow(1)
+      headerRow.height = 28
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: BRAND_HEADER }
+        }
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+        cell.border = {
+          top: { style: 'thin', color: { argb: BRAND_BORDER } },
+          right: { style: 'thin', color: { argb: BRAND_BORDER } },
+          bottom: { style: 'thin', color: { argb: BRAND_BORDER } },
+          left: { style: 'thin', color: { argb: BRAND_BORDER } }
+        }
+      })
+
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: 'I1'
+      }
+
+      for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const row = worksheet.getRow(rowNumber)
+        row.height = 24
+        row.eachCell((cell) => {
+          cell.alignment = { vertical: 'top', wrapText: true }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            right: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            bottom: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            left: { style: 'thin', color: { argb: 'FFE6E6E6' } }
+          }
+        })
+        const qtyCell = row.getCell('G')
+        if (typeof qtyCell.value === 'number') {
+          qtyCell.numFmt = '#,##0'
+        }
+      }
+
+      totalsRow.font = { bold: true }
+      totalsRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF9EEF0' }
+        }
+      })
+
+      const summary = workbook.addWorksheet('Сводка')
+      summary.columns = [
+        { header: 'Показатель', key: 'name', width: 36 },
+        { header: 'Значение', key: 'value', width: 28 }
+      ]
+      ;[
+        { name: 'Сформировано', value: new Date().toLocaleString('ru-RU') },
+        { name: 'Строк остатков', value: exportRows.length },
+        { name: 'Товаров', value: totals.productName.size },
+        { name: 'SKU', value: totals.sku.size },
+        { name: 'Локаций', value: totals.locationName.size },
+        { name: 'Итоговый остаток', value: totals.qty },
+        { name: 'Размер', value: size || 'Все' },
+        { name: 'Цвет', value: color || 'Все' },
+        {
+          name: 'Локация',
+          value: locationFilter ? (locationMap.get(locationFilter)?.name ?? '—') : 'Все'
+        },
+        { name: 'Поиск', value: searchQuery.trim() || '—' },
+        { name: 'Только активные', value: onlyActive ? 'Да' : 'Нет' },
+        { name: 'Сортировка', value: sortFieldLabels[sortBy] }
+      ].forEach((row) => summary.addRow(row))
+
+      summary.getRow(1).eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: BRAND_HEADER }
+        }
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+      })
+
+      for (let rowNumber = 2; rowNumber <= summary.rowCount; rowNumber += 1) {
+        const row = summary.getRow(rowNumber)
+        row.eachCell((cell) => {
+          cell.alignment = { vertical: 'top', wrapText: true }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            right: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            bottom: { style: 'thin', color: { argb: 'FFE6E6E6' } },
+            left: { style: 'thin', color: { argb: 'FFE6E6E6' } }
+          }
+        })
+      }
+
+      ;[2, 3, 4, 5, 6].forEach((summaryRowNumber) => {
+        const cell = summary.getRow(summaryRowNumber).getCell('B')
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '#,##0'
+          cell.font = { bold: true }
+        }
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const dateSuffix = new Date().toISOString().slice(0, 10)
+
+      link.href = downloadUrl
+      link.download = `inventory_${dateSuffix}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Не удалось сформировать остатки')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -749,6 +942,9 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>Сначала товар, внутри раскрытия его SKU</span>
           <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={handleExport} disabled={isExporting}>
+              {isExporting ? 'Excel...' : 'Excel'}
+            </Button>
             <Button type="button" variant="ghost" onClick={handleExpandAll} disabled={allGroupsExpanded}>
               Раскрыть все
             </Button>
@@ -757,6 +953,11 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             </Button>
           </div>
         </div>
+        {exportError ? (
+          <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+            Ошибка экспорта: {exportError}
+          </div>
+        ) : null}
         <Table>
           <THead>
             <TR>

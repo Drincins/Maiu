@@ -26,6 +26,10 @@ type Variant = {
   model_id: string
   model: {
     name: string
+    collection_id: string | null
+    collection?: {
+      name: string | null
+    } | null
     is_active: boolean
   } | null
 }
@@ -92,6 +96,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   const [occurredDate, setOccurredDate] = useState('')
   const [size, setSize] = useState('')
   const [color, setColor] = useState('')
+  const [collectionFilter, setCollectionFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('qty_desc')
@@ -129,6 +134,20 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
         .filter((value): value is string => Boolean(value))
     )
   )
+
+  const collections = useMemo(() => {
+    const map = new Map<string, string>()
+    variants.forEach((variant) => {
+      const collectionId = variant.model?.collection_id
+      if (!collectionId) return
+      if (!map.has(collectionId)) {
+        map.set(collectionId, variant.model?.collection?.name ?? 'Без названия')
+      }
+    })
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [variants])
 
   const models = useMemo(() => {
     const map = new Map<string, { id: string; name: string; color: string | null }>()
@@ -307,6 +326,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
       .filter((row) => STORAGE_LOCATION_TYPES.has(row.location.type))
       .filter((row) => {
         if (onlyActive && row.variant?.model?.is_active === false) return false
+        if (collectionFilter && row.variant?.model?.collection_id !== collectionFilter) return false
         if (size && row.variant?.size !== size) return false
         if (color && row.variant?.color !== color) return false
         if (locationFilter && row.location_id !== locationFilter) return false
@@ -315,6 +335,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
         const haystack = [
           row.variant?.sku ?? '',
           row.variant?.model?.name ?? '',
+          row.variant?.model?.collection?.name ?? '',
           row.variant?.size ?? '',
           row.variant?.color ?? '',
           row.location?.name ?? ''
@@ -358,6 +379,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
     variantMap,
     locationMap,
     onlyActive,
+    collectionFilter,
     size,
     color,
     locationFilter,
@@ -490,7 +512,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
 
       worksheet.autoFilter = {
         from: 'A1',
-        to: 'I1'
+        to: 'J1'
       }
 
       for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
@@ -505,7 +527,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             left: { style: 'thin', color: { argb: 'FFE6E6E6' } }
           }
         })
-        const qtyCell = row.getCell('G')
+        const qtyCell = row.getCell('H')
         if (typeof qtyCell.value === 'number') {
           qtyCell.numFmt = '#,##0'
         }
@@ -532,6 +554,12 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
         { name: 'SKU', value: totals.sku.size },
         { name: 'Локаций', value: totals.locationName.size },
         { name: 'Итоговый остаток', value: totals.qty },
+        {
+          name: 'Коллекция',
+          value: collectionFilter
+            ? (collections.find((collection) => collection.id === collectionFilter)?.name ?? '—')
+            : 'Все'
+        },
         { name: 'Размер', value: size || 'Все' },
         { name: 'Цвет', value: color || 'Все' },
         {
@@ -860,6 +888,23 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
             {sizes.map((item) => (
               <option key={item} value={item}>
                 {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+            Коллекция
+          </span>
+          <select
+            className="w-full rounded-xl border border-slate-200 px-3 py-2"
+            value={collectionFilter}
+            onChange={(event) => setCollectionFilter(event.target.value)}
+          >
+            <option value="">Все</option>
+            {collections.map((collection) => (
+              <option key={collection.id} value={collection.id}>
+                {collection.name}
               </option>
             ))}
           </select>

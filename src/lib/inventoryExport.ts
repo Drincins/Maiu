@@ -6,6 +6,9 @@ export type InventoryExportRowInput = {
     is_marked: boolean
     model?: {
       name: string | null
+      collection?: {
+        name: string | null
+      } | null
       is_active: boolean
     } | null
   }
@@ -17,6 +20,7 @@ export type InventoryExportRowInput = {
 
 export type InventoryExportRow = {
   productName: string
+  collectionName: string
   sku: string
   size: string
   color: string
@@ -29,6 +33,7 @@ export type InventoryExportRow = {
 export const INVENTORY_EXPORT_COLUMNS = [
   { header: '№', key: 'index', width: 6 },
   { header: 'Товар', key: 'productName', width: 30 },
+  { header: 'Коллекция', key: 'collectionName', width: 22 },
   { header: 'SKU', key: 'sku', width: 18 },
   { header: 'Размер', key: 'size', width: 12 },
   { header: 'Цвет', key: 'color', width: 18 },
@@ -43,6 +48,7 @@ export function buildInventoryExportRows(
 ): InventoryExportRow[] {
   return rows.map((row) => ({
     productName: row.variant.model?.name ?? '—',
+    collectionName: row.variant.model?.collection?.name ?? '—',
     sku: row.variant.sku,
     size: row.variant.size ?? '—',
     color: row.variant.color ?? '—',

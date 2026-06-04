@@ -9,9 +9,26 @@ export default async function InventoryPage() {
       supabase.from('v_stock_on_hand').select('variant_id, location_id, qty'),
       supabase
         .from('product_variants')
-        .select('id, sku, size, color, is_marked, model_id, model:product_models(name, is_active)'),
+        .select(
+          'id, sku, size, color, is_marked, model_id, model:product_models(name, is_active, collection_id, collection:product_collections(name))'
+        ),
       supabase.from('locations').select('id, name, type').in('type', ['sales', 'promo', 'other'])
     ])
+
+  const normalizeRelation = (value: unknown) => {
+    if (Array.isArray(value)) return value[0] ?? null
+    return value ?? null
+  }
+
+  const normalizedVariants = ((variants ?? []) as any[]).map((variant) => ({
+    ...variant,
+    model: variant.model
+      ? {
+          ...variant.model,
+          collection: normalizeRelation(variant.model.collection)
+        }
+      : null
+  }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -21,7 +38,7 @@ export default async function InventoryPage() {
       </div>
       <InventoryClient
         stock={stock ?? []}
-        variants={(variants as any) ?? []}
+        variants={normalizedVariants}
         locations={locations ?? []}
       />
     </div>

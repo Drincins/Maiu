@@ -8,7 +8,18 @@ import {
 test('INVENTORY_EXPORT_COLUMNS matches inventory Excel column order', () => {
   assert.deepEqual(
     INVENTORY_EXPORT_COLUMNS.map((column) => column.header),
-    ['№', 'Товар', 'SKU', 'Размер', 'Цвет', 'Локация', 'Остаток', 'Маркировка', 'Активность']
+    [
+      '№',
+      'Товар',
+      'Коллекция',
+      'SKU',
+      'Размер',
+      'Цвет',
+      'Локация',
+      'Остаток',
+      'Маркировка',
+      'Активность'
+    ]
   )
 })
 
@@ -23,6 +34,9 @@ test('buildInventoryExportRows formats optional inventory values safely', () => 
           is_marked: true,
           model: {
             name: 'Кимоно',
+            collection: {
+              name: 'Платья'
+            },
             is_active: false
           }
         },
@@ -35,6 +49,7 @@ test('buildInventoryExportRows formats optional inventory values safely', () => 
     [
       {
         productName: 'Кимоно',
+        collectionName: 'Платья',
         sku: 'SKU-1',
         size: '—',
         color: 'Черный',

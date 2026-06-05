@@ -94,6 +94,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   const [isPending, startTransition] = useTransition()
   const [showInboundForm, setShowInboundForm] = useState(false)
   const [occurredDate, setOccurredDate] = useState('')
+  const [modelFilter, setModelFilter] = useState('')
   const [size, setSize] = useState('')
   const [color, setColor] = useState('')
   const [collectionFilter, setCollectionFilter] = useState('')
@@ -150,18 +151,18 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
   }, [variants])
 
   const models = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; color: string | null }>()
+    const map = new Map<string, { id: string; name: string; collectionName: string | null }>()
     variants.forEach((variant) => {
       if (!variant.model) return
       if (!map.has(variant.model_id)) {
         map.set(variant.model_id, {
           id: variant.model_id,
           name: variant.model.name,
-          color: variant.color ?? null
+          collectionName: variant.model.collection?.name ?? null
         })
       }
     })
-    return Array.from(map.values())
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [variants])
 
   const modelVariants = useMemo(
@@ -326,6 +327,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
       .filter((row) => STORAGE_LOCATION_TYPES.has(row.location.type))
       .filter((row) => {
         if (onlyActive && row.variant?.model?.is_active === false) return false
+        if (modelFilter && row.variant.model_id !== modelFilter) return false
         if (collectionFilter && row.variant?.model?.collection_id !== collectionFilter) return false
         if (size && row.variant?.size !== size) return false
         if (color && row.variant?.color !== color) return false
@@ -379,6 +381,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
     variantMap,
     locationMap,
     onlyActive,
+    modelFilter,
     collectionFilter,
     size,
     color,
@@ -555,6 +558,10 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
         { name: 'Локаций', value: totals.locationName.size },
         { name: 'Итоговый остаток', value: totals.qty },
         {
+          name: 'Товар',
+          value: modelFilter ? (models.find((model) => model.id === modelFilter)?.name ?? '—') : 'Все'
+        },
+        {
           name: 'Коллекция',
           value: collectionFilter
             ? (collections.find((collection) => collection.id === collectionFilter)?.name ?? '—')
@@ -694,7 +701,7 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
                         <option value="">—</option>
                         {models.map((model) => (
                           <option key={model.id} value={model.id}>
-                            {model.name}{model.color ? ` · ${model.color}` : ''}
+                            {model.name}{model.collectionName ? ` · ${model.collectionName}` : ''}
                           </option>
                         ))}
                       </select>
@@ -875,6 +882,23 @@ export default function InventoryClient({ stock, variants, locations }: Inventor
       ) : null}
 
       <Card className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+            Товар
+          </span>
+          <select
+            className="w-full rounded-xl border border-slate-200 px-3 py-2"
+            value={modelFilter}
+            onChange={(event) => setModelFilter(event.target.value)}
+          >
+            <option value="">Все</option>
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}{model.collectionName ? ` · ${model.collectionName}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="text-sm">
           <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
             Размер
